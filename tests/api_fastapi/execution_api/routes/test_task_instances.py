@@ -152,6 +152,39 @@ class TestTIRunState:
 
         assert session.scalar(select(TaskInstance.state).where(TaskInstance.id == ti.id)) == initial_ti_state
 
+    def test_ti_run_failed_with_extra(self, client, session, create_task_instance, time_machine):
+        """
+        Test that a 422 error is returned when extra fields are included in the payload.
+        """
+        instant_str = "2024-12-19T00:00:00Z"
+        instant = timezone.parse(instant_str)
+        time_machine.move_to(instant, tick=False)
+
+        ti = create_task_instance(
+            task_id="test_ti_run_failed_with_extra",
+            state=State.QUEUED,
+            session=session,
+            start_date=instant,
+        )
+
+        session.commit()
+
+        response = client.patch(
+            f"/execution/task-instances/{ti.id}/run",
+            json={
+                "state": "running",
+                "hostname": "random-hostname",
+                "unixname": "random-unixname",
+                "pid": 100,
+                "start_date": instant_str,
+                "foo": "bar",
+            },
+        )
+
+        assert response.status_code == 422
+        assert response.json()["detail"][0]["type"] == "extra_forbidden"
+        assert response.json()["detail"][0]["msg"] == "Extra inputs are not permitted"
+
     def test_xcom_cleared_when_ti_runs(self, client, session, create_task_instance, time_machine):
         """
         Test that the xcoms are cleared when the Task Instance state is updated to running.
@@ -655,6 +688,27 @@ class TestTIUpdateState:
         assert ti.next_kwargs is None
         assert ti.duration == 3600.00
 
+    def test_ti_update_state_failed_with_extra(self, client, session, create_task_instance, time_machine):
+        """
+        Test that a 422 error is returned when extra fields are included in the payload.
+        """
+        ti = create_task_instance(
+            task_id="test_ti_update_state_failed_with_extra",
+            state=State.RUNNING,
+            session=session,
+            start_date=DEFAULT_START_DATE,
+        )
+
+        session.commit()
+
+        response = client.patch(
+            f"/execution/task-instances/{ti.id}/state", json={"state": "scheduled", "foo": "bar"}
+        )
+
+        assert response.status_code == 422
+        assert response.json()["detail"][0]["type"] == "extra_forbidden"
+        assert response.json()["detail"][0]["msg"] == "Extra inputs are not permitted"
+
 
 class TestTIHealthEndpoint:
     def setup_method(self):
@@ -823,6 +877,62 @@ class TestTIHealthEndpoint:
         # If successful, ensure last_heartbeat_at is updated
         session.refresh(ti)
         assert ti.last_heartbeat_at == time_now.add(minutes=10)
+
+    def test_ti_update_state_to_failed_table_check(self, client, session, create_task_instance):
+        ti = create_task_instance(
+            task_id="test_ti_update_state_to_failed_table_check",
+            state=State.RUNNING,
+        )
+        ti.start_date = DEFAULT_START_DATE
+        session.commit()
+
+        response = client.patch(
+            f"/execution/task-instances/{ti.id}/state",
+            json={
+                "state": State.FAILED,
+                "end_date": DEFAULT_END_DATE.isoformat(),
+            },
+        )
+
+        assert response.status_code == 204
+        assert response.text == ""
+
+        session.expire_all()
+
+        ti = session.get(TaskInstance, ti.id)
+        assert ti.state == State.FAILED
+        assert ti.next_method is None
+        assert ti.next_kwargs is None
+        assert ti.duration == 3600.00
+
+    def test_ti_heartbeat_with_extra(
+        self,
+        client,
+        session,
+        create_task_instance,
+        time_machine,
+    ):
+        """
+        Test that a 422 error is returned when extra fields are included in the payload.
+        """
+        ti = create_task_instance(
+            task_id="test_ti_heartbeat_when_task_not_running",
+            state=State.RUNNING,
+            hostname="random-hostname",
+            pid=1547,
+            session=session,
+        )
+        session.commit()
+        task_instance_id = ti.id
+
+        response = client.put(
+            f"/execution/task-instances/{task_instance_id}/heartbeat",
+            json={"hostname": "random-hostname", "pid": 1547, "foo": "bar"},
+        )
+
+        assert response.status_code == 422
+        assert response.json()["detail"][0]["type"] == "extra_forbidden"
+        assert response.json()["detail"][0]["msg"] == "Extra inputs are not permitted"
 
 
 class TestTIPutRTIF:
