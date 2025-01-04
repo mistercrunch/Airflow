@@ -423,7 +423,7 @@ def test_get_identity_column_lineage_facet_no_input_datasets():
 
 
 @pytest.mark.parametrize(
-    "input_path, expected_output",
+    ("input_path", "expected_output"),
     [
         ("/path/to/file.txt", "path/to/file.txt"),  # Full file path
         ("file.txt", "file.txt"),  # File path in root directory
@@ -469,7 +469,7 @@ def test_is_openlineage_listener_not_found(mock_is_disabled, mock_get_listener):
 
 
 @pytest.mark.parametrize(
-    "job, expected",
+    ("job", "expected"),
     [
         ({"sparkJob": {}}, "sparkJob"),
         ({"pysparkJob": {}}, "pysparkJob"),
