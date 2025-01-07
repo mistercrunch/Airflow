@@ -217,7 +217,7 @@ def startup() -> tuple[RuntimeTaskInstance, Logger]:
         # setproctitle causes issue on Mac OS: https://github.com/benoitc/gunicorn/issues/3021
         os_type = sys.platform
         if os_type == "darwin":
-            log.info("Mac OS detected, skipping setproctitle")
+            log.debug("Mac OS detected, skipping setproctitle")
         else:
             from setproctitle import setproctitle
 
