@@ -39,7 +39,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import attrs
-from setproctitle import setproctitle
 from sqlalchemy import delete, select, update
 from tabulate import tabulate
 from uuid6 import uuid7
@@ -185,7 +184,15 @@ class DagFileProcessorAgent(LoggingMixin, MultiprocessingStartMethodMixin):
         # to iterate the child processes
 
         set_new_process_group()
-        setproctitle("airflow scheduler -- DagFileProcessorManager")
+
+        # setproctitle causes issue on Mac OS: https://github.com/benoitc/gunicorn/issues/3021
+        os_type = sys.platform
+        if os_type == "darwin":
+            log.info("Mac OS detected, skipping setproctitle")
+        else:
+	    from setproctitle import setproctitle
+            setproctitle("airflow scheduler -- DagFileProcessorManager")
+
         reload_configuration_for_dag_processing()
         processor_manager = DagFileProcessorManager(
             max_runs=max_runs,
