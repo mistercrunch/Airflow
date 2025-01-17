@@ -914,6 +914,8 @@ class DagRun(Base, LoggingMixin):
                     full_filepath=dag.fileloc,
                     dag_id=self.dag_id,
                     run_id=self.run_id,
+                    bundle_name=self.dag_model.bundle_name,
+                    bundle_version=self.bundle_version,
                     is_failure_callback=True,
                     msg="task_failure",
                 )
@@ -941,6 +943,8 @@ class DagRun(Base, LoggingMixin):
                     full_filepath=dag.fileloc,
                     dag_id=self.dag_id,
                     run_id=self.run_id,
+                    bundle_name=self.dag_model.bundle_name,
+                    bundle_version=self.bundle_version,
                     is_failure_callback=False,
                     msg="success",
                 )
@@ -958,6 +962,8 @@ class DagRun(Base, LoggingMixin):
                     full_filepath=dag.fileloc,
                     dag_id=self.dag_id,
                     run_id=self.run_id,
+                    bundle_name=self.dag_model.bundle_name,
+                    bundle_version=self.bundle_version,
                     is_failure_callback=True,
                     msg="all_tasks_deadlocked",
                 )
