@@ -36,14 +36,10 @@ from airflow.utils import timezone
 from airflow.utils.state import State
 from airflow.utils.task_instance_session import set_current_task_instance_session
 from airflow.utils.trigger_rule import TriggerRule
-from airflow.utils.types import DagRunType
+from airflow.utils.types import DagRunTriggeredByType, DagRunType
 from airflow.utils.xcom import XCOM_RETURN_KEY
 
 from providers.tests.standard.operators.test_python import BasePythonTest
-from tests_common.test_utils.version_compat import AIRFLOW_V_3_0_PLUS
-
-if AIRFLOW_V_3_0_PLUS:
-    from airflow.utils.types import DagRunTriggeredByType
 
 pytestmark = pytest.mark.db_test
 
@@ -440,7 +436,6 @@ class TestAirflowTaskDecorator(BasePythonTest):
         with self.dag_non_serialized:
             ret = return_dict(test_number)
 
-        triggered_by_kwargs = {"triggered_by": DagRunTriggeredByType.TEST} if AIRFLOW_V_3_0_PLUS else {}
         dr = self.dag_non_serialized.create_dagrun(
             run_id="test",
             run_type=DagRunType.MANUAL,
@@ -450,7 +445,8 @@ class TestAirflowTaskDecorator(BasePythonTest):
             data_interval=self.dag_non_serialized.timetable.infer_manual_data_interval(
                 run_after=DEFAULT_DATE
             ),
-            **triggered_by_kwargs,
+            run_after=DEFAULT_DATE,
+            triggered_by=DagRunTriggeredByType.TEST,
         )
 
         ret.operator.run(start_date=DEFAULT_DATE, end_date=DEFAULT_DATE)
@@ -505,7 +501,6 @@ class TestAirflowTaskDecorator(BasePythonTest):
             bigger_number = add_2(test_number)
             ret = add_num(bigger_number, XComArg(bigger_number.operator))
 
-        triggered_by_kwargs = {"triggered_by": DagRunTriggeredByType.TEST} if AIRFLOW_V_3_0_PLUS else {}
         dr = self.dag_non_serialized.create_dagrun(
             run_id="test",
             run_type=DagRunType.MANUAL,
@@ -515,7 +510,8 @@ class TestAirflowTaskDecorator(BasePythonTest):
             data_interval=self.dag_non_serialized.timetable.infer_manual_data_interval(
                 run_after=DEFAULT_DATE
             ),
-            **triggered_by_kwargs,
+            run_after=DEFAULT_DATE,
+            triggered_by=DagRunTriggeredByType.TEST,
         )
 
         bigger_number.operator.run(start_date=DEFAULT_DATE, end_date=DEFAULT_DATE)
