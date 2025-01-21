@@ -29,6 +29,7 @@ from airflow.models.dag import DagModel
 from airflow.models.dagrun import DagRun
 from airflow.models.log import Log
 from airflow.models.taskinstance import TaskInstance
+from airflow.providers.standard.operators.python import PythonOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.providers.standard.triggers.external_task import DagStateTrigger
 from airflow.utils import timezone
@@ -127,6 +128,27 @@ class TestDagRunOperator:
         assert dagrun.external_trigger
         assert dagrun.run_id == DagRun.generate_run_id(DagRunType.MANUAL, dagrun.logical_date)
         self.assert_extra_link(dagrun, task, dag_maker.session)
+
+    def test_trigger_dagrun_dag_id_from_xcom_args(self, dag_maker):
+        with dag_maker(
+            TEST_DAG_ID, default_args={"owner": "airflow", "start_date": DEFAULT_DATE}, serialized=True
+        ) as dag:
+            get_dag_id_task = PythonOperator(
+                task_id="get_dag_id_task", python_callable=lambda: TRIGGERED_DAG_ID
+            )
+
+            task = TriggerDagRunOperator(task_id="test_task", trigger_dag_id=get_dag_id_task.output)
+
+        self.re_sync_triggered_dag_to_db(dag, dag_maker)
+        dag_maker.create_dagrun()
+        get_dag_id_task.run(start_date=DEFAULT_DATE, end_date=DEFAULT_DATE, ignore_ti_state=True)
+        task.run(start_date=DEFAULT_DATE, end_date=DEFAULT_DATE, ignore_ti_state=True)
+
+        with create_session() as session:
+            dagrun = session.query(DagRun).filter(DagRun.dag_id == TRIGGERED_DAG_ID).one()
+            assert dagrun.external_trigger
+            assert dagrun.run_id == DagRun.generate_run_id(DagRunType.MANUAL, dagrun.logical_date)
+            self.assert_extra_link(dagrun, task, session)
 
     def test_trigger_dagrun_custom_run_id(self, dag_maker):
         with dag_maker(
