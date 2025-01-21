@@ -36,23 +36,14 @@ def simple_app():
                 "core",
                 "auth_manager",
             ): "airflow.auth.managers.simple.simple_auth_manager.SimpleAuthManager",
+            ("core", "simple_auth_manager_users"): "test:admin",
         }
     ):
         with open(SimpleAuthManager.get_generated_password_file(), "w") as file:
             user = {"test": "test"}
             file.write(json.dumps(user))
 
-        return application.create_app(
-            testing=True,
-            config={
-                "SIMPLE_AUTH_MANAGER_USERS": [
-                    {
-                        "username": "test",
-                        "role": "admin",
-                    }
-                ]
-            },
-        )
+        return application.create_app(testing=True)
 
 
 @pytest.mark.db_test
@@ -73,13 +64,20 @@ class TestSimpleAuthManagerAuthenticationViews:
             ("test", "test", True, {"next": "next_url"}, "next_url?token=token"),
         ],
     )
-    @patch("airflow.auth.managers.simple.views.auth.JWTSigner")
+    @patch("airflow.auth.managers.simple.views.auth.get_auth_manager")
     def test_login_submit(
-        self, mock_jwt_signer, simple_app, username, password, is_successful, query_params, expected_redirect
+        self,
+        mock_get_auth_manager,
+        simple_app,
+        username,
+        password,
+        is_successful,
+        query_params,
+        expected_redirect,
     ):
-        signer = Mock()
-        signer.generate_signed_token.return_value = "token"
-        mock_jwt_signer.return_value = signer
+        auth_manager = Mock()
+        auth_manager.get_jwt_token.return_value = "token"
+        mock_get_auth_manager.return_value = auth_manager
         with simple_app.test_client() as client:
             response = client.post(
                 "/login_submit", query_string=query_params, data={"username": username, "password": password}

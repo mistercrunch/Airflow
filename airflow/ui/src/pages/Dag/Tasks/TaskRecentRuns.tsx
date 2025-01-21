@@ -16,13 +16,14 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { Box } from "@chakra-ui/react";
-import { Flex } from "@chakra-ui/react";
+import { Box, Flex } from "@chakra-ui/react";
 import dayjs from "dayjs";
 import duration from "dayjs/plugin/duration";
+import { Link } from "react-router-dom";
 
 import type { TaskInstanceResponse } from "openapi/requests/types.gen";
 import TaskInstanceTooltip from "src/components/TaskInstanceTooltip";
+import { getTaskInstanceLink } from "src/utils/links";
 import { stateColor } from "src/utils/stateColor";
 
 dayjs.extend(duration);
@@ -41,9 +42,7 @@ export const TaskRecentRuns = ({
   const taskInstancesWithDuration = taskInstances.map((taskInstance) => ({
     ...taskInstance,
     duration:
-      dayjs
-        .duration(dayjs(taskInstance.end_date).diff(taskInstance.start_date))
-        .asSeconds() || 0,
+      dayjs.duration(dayjs(taskInstance.end_date ?? dayjs()).diff(taskInstance.start_date)).asSeconds() || 0,
   }));
 
   const max = Math.max.apply(
@@ -55,19 +54,18 @@ export const TaskRecentRuns = ({
     <Flex alignItems="flex-end" flexDirection="row-reverse">
       {taskInstancesWithDuration.map((taskInstance) =>
         taskInstance.state === null ? undefined : (
-          <TaskInstanceTooltip
-            key={taskInstance.dag_run_id}
-            taskInstance={taskInstance}
-          >
-            <Box p={1}>
-              <Box
-                bg={stateColor[taskInstance.state]}
-                borderRadius="4px"
-                height={`${(taskInstance.duration / max) * BAR_HEIGHT}px`}
-                minHeight={1}
-                width="4px"
-              />
-            </Box>
+          <TaskInstanceTooltip key={taskInstance.dag_run_id} taskInstance={taskInstance}>
+            <Link to={getTaskInstanceLink(taskInstance)}>
+              <Box p={1}>
+                <Box
+                  bg={stateColor[taskInstance.state]}
+                  borderRadius="4px"
+                  height={`${(taskInstance.duration / max) * BAR_HEIGHT}px`}
+                  minHeight={1}
+                  width="4px"
+                />
+              </Box>
+            </Link>
           </TaskInstanceTooltip>
         ),
       )}
