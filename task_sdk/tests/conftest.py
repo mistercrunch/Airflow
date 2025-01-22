@@ -143,8 +143,11 @@ class MakeTIContextCallable(Protocol):
         logical_date: str | datetime = ...,
         data_interval_start: str | datetime = ...,
         data_interval_end: str | datetime = ...,
+        clear_number: int = ...,
         start_date: str | datetime = ...,
         run_type: str = ...,
+        task_reschedule_count: int = ...,
+        ti_start_date: str | datetime = ...,
     ) -> TIRunContext: ...
 
 
@@ -158,6 +161,8 @@ class MakeTIContextDictCallable(Protocol):
         data_interval_end: str | datetime = ...,
         start_date: str | datetime = ...,
         run_type: str = ...,
+        task_reschedule_count: int = ...,
+        ti_start_date: str | datetime = ...,
     ) -> dict[str, Any]: ...
 
 
@@ -172,8 +177,11 @@ def make_ti_context() -> MakeTIContextCallable:
         logical_date: str | datetime = "2024-12-01T01:00:00Z",
         data_interval_start: str | datetime = "2024-12-01T00:00:00Z",
         data_interval_end: str | datetime = "2024-12-01T01:00:00Z",
+        clear_number: int = 0,
         start_date: str | datetime = "2024-12-01T01:00:00Z",
         run_type: str = "manual",
+        task_reschedule_count: int = 0,
+        ti_start_date: str | datetime = "2024-12-01T01:00:00Z",
     ) -> TIRunContext:
         return TIRunContext(
             dag_run=DagRun(
@@ -182,10 +190,13 @@ def make_ti_context() -> MakeTIContextCallable:
                 logical_date=logical_date,  # type: ignore
                 data_interval_start=data_interval_start,  # type: ignore
                 data_interval_end=data_interval_end,  # type: ignore
+                clear_number=clear_number,  # type: ignore
                 start_date=start_date,  # type: ignore
                 run_type=run_type,  # type: ignore
             ),
+            task_reschedule_count=task_reschedule_count,
             max_tries=0,
+            start_date=ti_start_date,
         )
 
     return _make_context
@@ -203,6 +214,8 @@ def make_ti_context_dict(make_ti_context: MakeTIContextCallable) -> MakeTIContex
         data_interval_end: str | datetime = "2024-12-01T01:00:00Z",
         start_date: str | datetime = "2024-12-01T00:00:00Z",
         run_type: str = "manual",
+        task_reschedule_count: int = 0,
+        ti_start_date: str | datetime = "2024-12-01T01:00:00Z",
     ) -> dict[str, Any]:
         context = make_ti_context(
             dag_id=dag_id,
@@ -212,6 +225,8 @@ def make_ti_context_dict(make_ti_context: MakeTIContextCallable) -> MakeTIContex
             data_interval_end=data_interval_end,
             start_date=start_date,
             run_type=run_type,
+            task_reschedule_count=task_reschedule_count,
+            ti_start_date=ti_start_date,
         )
         return context.model_dump(exclude_unset=True, mode="json")
 

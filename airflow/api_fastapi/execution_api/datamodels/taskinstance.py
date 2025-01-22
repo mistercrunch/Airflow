@@ -221,6 +221,7 @@ class DagRun(BaseModel):
     data_interval_end: UtcDateTime | None
     start_date: UtcDateTime
     end_date: UtcDateTime | None
+    clear_number: int
     run_type: DagRunType
     conf: Annotated[dict[str, Any], Field(default_factory=dict)]
     external_trigger: bool = False
@@ -232,6 +233,9 @@ class TIRunContext(BaseModel):
     dag_run: DagRun
     """DAG run information for the task instance."""
 
+    task_reschedule_count: Annotated[int, Field(default=0)]
+    """How many times the task has been rescheduled."""
+
     max_tries: int
     """Maximum number of tries for the task instance (from DB)."""
 
@@ -240,6 +244,9 @@ class TIRunContext(BaseModel):
 
     connections: Annotated[list[ConnectionResponse], Field(default_factory=list)]
     """Connections that can be accessed by the task instance."""
+
+    start_date: Annotated[UtcDateTime, Field(title="Start Date")]
+    """Start date of the task instance."""
 
 
 class PrevSuccessfulDagRunResponse(BaseModel):

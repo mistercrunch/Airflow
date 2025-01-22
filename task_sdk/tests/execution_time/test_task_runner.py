@@ -36,6 +36,8 @@ from airflow.exceptions import (
     AirflowSkipException,
     AirflowTaskTerminated,
 )
+from airflow.listeners import hookimpl
+from airflow.listeners.listener import get_listener_manager
 from airflow.sdk import DAG, BaseOperator, Connection, get_current_context
 from airflow.sdk.api.datamodels._generated import AssetProfile, TaskInstance, TerminalTIState
 from airflow.sdk.definitions.asset import Asset, AssetAlias
@@ -65,11 +67,13 @@ from airflow.sdk.execution_time.task_runner import (
     CommsDecoder,
     RuntimeTaskInstance,
     _push_xcom_if_needed,
+    finalize,
     parse,
     run,
     startup,
 )
 from airflow.utils import timezone
+from airflow.utils.state import TaskInstanceState
 
 FAKE_BUNDLE = BundleInfo(name="anything", version="any")
 
@@ -80,6 +84,42 @@ def get_inline_dag(dag_id: str, task: BaseOperator) -> DAG:
     task.dag = dag
 
     return dag
+
+
+@pytest.fixture
+def mocked_parse(spy_agency):
+    """
+    Fixture to set up an inline DAG and use it in a stubbed `parse` function. Use this fixture if you
+    want to isolate and test `parse` or `run` logic without having to define a DAG file.
+
+    This fixture returns a helper function `set_dag` that:
+    1. Creates an in line DAG with the given `dag_id` and `task` (limited to one task)
+    2. Constructs a `RuntimeTaskInstance` based on the provided `StartupDetails` and task.
+    3. Stubs the `parse` function using `spy_agency`, to return the mocked `RuntimeTaskInstance`.
+
+    After adding the fixture in your test function signature, you can use it like this ::
+
+            mocked_parse(
+                StartupDetails(
+                    ti=TaskInstance(id=uuid7(), task_id="hello", dag_id="super_basic_run", run_id="c", try_number=1),
+                    file="",
+                    requests_fd=0,
+                ),
+                "example_dag_id",
+                CustomOperator(task_id="hello"),
+            )
+    """
+
+    def set_dag(what: StartupDetails, dag_id: str, task: BaseOperator) -> RuntimeTaskInstance:
+        dag = get_inline_dag(dag_id, task)
+        t = dag.task_dict[task.task_id]
+        ti = RuntimeTaskInstance.model_construct(
+            **what.ti.model_dump(exclude_unset=True), task=t, _ti_context_from_server=what.ti_context
+        )
+        spy_agency.spy_on(parse, call_fake=lambda _: ti)
+        return ti
+
+    return set_dag
 
 
 class CustomOperator(BaseOperator):
@@ -99,11 +139,13 @@ class TestCommsDecoder:
 
         w.makefile("wb").write(
             b'{"type":"StartupDetails", "ti": {'
-            b'"id": "4d828a62-a417-4936-a7a6-2b3fabacecab", "task_id": "a", "try_number": 1, "run_id": "b", "dag_id": "c" }, '
+            b'"id": "4d828a62-a417-4936-a7a6-2b3fabacecab", "task_id": "a", "try_number": 1, "run_id": "b", '
+            b'"dag_id": "c", "start_date": "2024-12-01T01:00:00Z" }, '
             b'"ti_context":{"dag_run":{"dag_id":"c","run_id":"b","logical_date":"2024-12-01T01:00:00Z",'
             b'"data_interval_start":"2024-12-01T00:00:00Z","data_interval_end":"2024-12-01T01:00:00Z",'
             b'"start_date":"2024-12-01T01:00:00Z","end_date":null,"run_type":"manual","conf":null},'
-            b'"max_tries":0,"variables":null,"connections":null},"file": "/dev/null", "dag_rel_path": "/dev/null", "bundle_info": {"name": '
+            b'"max_tries":0,"variables":null,"start_date":"2024-12-01T01:00:00Z","connections":null},'
+            b'"file": "/dev/null", "dag_rel_path": "/dev/null", "bundle_info": {"name": '
             b'"any-name", "version": "any-version"}, "requests_fd": '
             + str(w2.fileno()).encode("ascii")
             + b"}\n"
@@ -128,7 +170,13 @@ class TestCommsDecoder:
 def test_parse(test_dags_dir: Path, make_ti_context):
     """Test that checks parsing of a basic dag with an un-mocked parse."""
     what = StartupDetails(
-        ti=TaskInstance(id=uuid7(), task_id="a", dag_id="super_basic", run_id="c", try_number=1),
+        ti=TaskInstance(
+            id=uuid7(),
+            task_id="a",
+            dag_id="super_basic",
+            run_id="c",
+            try_number=1,
+        ),
         dag_rel_path="super_basic.py",
         bundle_info=BundleInfo(name="my-bundle", version=None),
         requests_fd=0,
@@ -355,7 +403,11 @@ def test_startup_basic_templated_dag(mocked_parse, make_ti_context, mock_supervi
 
     what = StartupDetails(
         ti=TaskInstance(
-            id=uuid7(), task_id="templated_task", dag_id="basic_templated_dag", run_id="c", try_number=1
+            id=uuid7(),
+            task_id="templated_task",
+            dag_id="basic_templated_dag",
+            run_id="c",
+            try_number=1,
         ),
         bundle_info=FAKE_BUNDLE,
         dag_rel_path="",
@@ -423,9 +475,16 @@ def test_startup_and_run_dag_with_rtif(
                 print(key, getattr(self, key))
 
     task = CustomOperator(task_id="templated_task")
+    instant = timezone.datetime(2024, 12, 3, 10, 0)
 
     what = StartupDetails(
-        ti=TaskInstance(id=uuid7(), task_id="templated_task", dag_id="basic_dag", run_id="c", try_number=1),
+        ti=TaskInstance(
+            id=uuid7(),
+            task_id="templated_task",
+            dag_id="basic_dag",
+            run_id="c",
+            try_number=1,
+        ),
         dag_rel_path="",
         bundle_info=FAKE_BUNDLE,
         requests_fd=0,
@@ -433,7 +492,6 @@ def test_startup_and_run_dag_with_rtif(
     )
     ti = mocked_parse(what, "basic_dag", task)
 
-    instant = timezone.datetime(2024, 12, 3, 10, 0)
     time_machine.move_to(instant, tick=False)
 
     mock_supervisor_comms.get_message.return_value = what
@@ -662,7 +720,13 @@ class TestRuntimeTaskInstance:
         get_inline_dag(dag_id=dag_id, task=task)
 
         ti_id = uuid7()
-        ti = TaskInstance(id=ti_id, task_id=task.task_id, dag_id=dag_id, run_id="test_run", try_number=1)
+        ti = TaskInstance(
+            id=ti_id,
+            task_id=task.task_id,
+            dag_id=dag_id,
+            run_id="test_run",
+            try_number=1,
+        )
 
         # Keep the context empty
         runtime_ti = RuntimeTaskInstance.model_construct(
@@ -728,6 +792,7 @@ class TestRuntimeTaskInstance:
             "prev_end_date_success": timezone.datetime(2024, 12, 1, 1, 0, 0),
             "prev_start_date_success": timezone.datetime(2024, 12, 1, 0, 0, 0),
             "run_id": "test_run",
+            "start_date": timezone.datetime(2024, 12, 1, 1, 0),
             "task": task,
             "task_instance": runtime_ti,
             "ti": runtime_ti,
@@ -735,6 +800,7 @@ class TestRuntimeTaskInstance:
             "data_interval_end": timezone.datetime(2024, 12, 1, 1, 0, 0),
             "data_interval_start": timezone.datetime(2024, 12, 1, 0, 0, 0),
             "logical_date": timezone.datetime(2024, 12, 1, 1, 0, 0),
+            "task_reschedule_count": 0,
             "ds": "2024-12-01",
             "ds_nodash": "20241201",
             "task_instance_key_str": "basic_task__hello__20241201",
@@ -1053,3 +1119,93 @@ class TestXComAfterTaskExecution:
         assert str(exc_info.value) == (
             f"Returned dictionary keys must be strings when using multiple_outputs, found 2 ({int}) instead"
         )
+
+
+class TestTaskRunnerCallsListeners:
+    class CustomListener:
+        def __init__(self):
+            self.state = []
+
+        @hookimpl
+        def on_task_instance_running(self, previous_state, task_instance):
+            self.state.append(TaskInstanceState.RUNNING)
+
+        @hookimpl
+        def on_task_instance_success(self, previous_state, task_instance):
+            self.state.append(TaskInstanceState.SUCCESS)
+
+        @hookimpl
+        def on_task_instance_failed(self, previous_state, task_instance):
+            self.state.append(TaskInstanceState.FAILED)
+
+    @pytest.fixture(autouse=True)
+    def clean_listener_manager(self):
+        lm = get_listener_manager()
+        lm.clear()
+        yield
+        lm = get_listener_manager()
+        lm.clear()
+
+    def test_task_runner_calls_listeners_success(self, mocked_parse, mock_supervisor_comms):
+        listener = self.CustomListener()
+        get_listener_manager().add_listener(listener)
+
+        class CustomOperator(BaseOperator):
+            def execute(self, context):
+                self.value = "something"
+
+        task = CustomOperator(
+            task_id="test_task_runner_calls_listeners", do_xcom_push=True, multiple_outputs=True
+        )
+        dag = get_inline_dag(dag_id="test_dag", task=task)
+        ti = TaskInstance(
+            id=uuid7(),
+            task_id=task.task_id,
+            dag_id=dag.dag_id,
+            run_id="test_run",
+            try_number=1,
+        )
+
+        runtime_ti = RuntimeTaskInstance.model_construct(**ti.model_dump(exclude_unset=True), task=task)
+        log = mock.MagicMock()
+
+        state = run(runtime_ti, log)
+        finalize(ti, state, log)
+
+        assert listener.state == [TaskInstanceState.RUNNING, TaskInstanceState.SUCCESS]
+
+    @pytest.mark.parametrize(
+        "exception",
+        [
+            ValueError("oops"),
+            SystemExit("oops"),
+            AirflowException("oops"),
+        ],
+    )
+    def test_task_runner_calls_listeners_failed(self, mocked_parse, mock_supervisor_comms, exception):
+        listener = self.CustomListener()
+        get_listener_manager().add_listener(listener)
+
+        class CustomOperator(BaseOperator):
+            def execute(self, context):
+                raise exception
+
+        task = CustomOperator(
+            task_id="test_task_runner_calls_listeners_failed", do_xcom_push=True, multiple_outputs=True
+        )
+        dag = get_inline_dag(dag_id="test_dag", task=task)
+        ti = TaskInstance(
+            id=uuid7(),
+            task_id=task.task_id,
+            dag_id=dag.dag_id,
+            run_id="test_run",
+            try_number=1,
+        )
+
+        runtime_ti = RuntimeTaskInstance.model_construct(**ti.model_dump(exclude_unset=True), task=task)
+        log = mock.MagicMock()
+
+        state = run(runtime_ti, log)
+        finalize(ti, state, log)
+
+        assert listener.state == [TaskInstanceState.RUNNING, TaskInstanceState.FAILED]
