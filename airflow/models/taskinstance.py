@@ -1912,6 +1912,7 @@ class TaskInstance(Base, LoggingMixin):
             max_tries=self.max_tries,
             hostname=self.hostname,
             _ti_context_from_server=context_from_server,
+            start_date=self.start_date,
         )
 
         return runtime_ti

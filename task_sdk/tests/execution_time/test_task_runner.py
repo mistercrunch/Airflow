@@ -114,7 +114,10 @@ def mocked_parse(spy_agency):
         dag = get_inline_dag(dag_id, task)
         t = dag.task_dict[task.task_id]
         ti = RuntimeTaskInstance.model_construct(
-            **what.ti.model_dump(exclude_unset=True), task=t, _ti_context_from_server=what.ti_context
+            **what.ti.model_dump(exclude_unset=True),
+            task=t,
+            _ti_context_from_server=what.ti_context,
+            start_date=what.start_date,
         )
         spy_agency.spy_on(parse, call_fake=lambda _: ti)
         return ti
@@ -144,8 +147,8 @@ class TestCommsDecoder:
             b'"ti_context":{"dag_run":{"dag_id":"c","run_id":"b","logical_date":"2024-12-01T01:00:00Z",'
             b'"data_interval_start":"2024-12-01T00:00:00Z","data_interval_end":"2024-12-01T01:00:00Z",'
             b'"start_date":"2024-12-01T01:00:00Z","end_date":null,"run_type":"manual","conf":null},'
-            b'"max_tries":0,"variables":null,"start_date":"2024-12-01T01:00:00Z","connections":null},'
-            b'"file": "/dev/null", "dag_rel_path": "/dev/null", "bundle_info": {"name": '
+            b'"max_tries":0,"variables":null,"connections":null},"file": "/dev/null",'
+            b'"start_date":"2024-12-01T01:00:00Z", "dag_rel_path": "/dev/null", "bundle_info": {"name": '
             b'"any-name", "version": "any-version"}, "requests_fd": '
             + str(w2.fileno()).encode("ascii")
             + b"}\n"
@@ -160,6 +163,7 @@ class TestCommsDecoder:
         assert msg.ti.dag_id == "c"
         assert msg.dag_rel_path == "/dev/null"
         assert msg.bundle_info == BundleInfo(name="any-name", version="any-version")
+        assert msg.start_date == timezone.datetime(2024, 12, 1, 1)
 
         # Since this was a StartupDetails message, the decoder should open the other socket
         assert decoder.request_socket is not None
@@ -181,6 +185,7 @@ def test_parse(test_dags_dir: Path, make_ti_context):
         bundle_info=BundleInfo(name="my-bundle", version=None),
         requests_fd=0,
         ti_context=make_ti_context(),
+        start_date=timezone.utcnow(),
     )
 
     with patch.dict(
@@ -413,6 +418,7 @@ def test_startup_basic_templated_dag(mocked_parse, make_ti_context, mock_supervi
         dag_rel_path="",
         requests_fd=0,
         ti_context=make_ti_context(),
+        start_date=timezone.utcnow(),
     )
     mocked_parse(what, "basic_templated_dag", task)
 
@@ -489,6 +495,7 @@ def test_startup_and_run_dag_with_rtif(
         bundle_info=FAKE_BUNDLE,
         requests_fd=0,
         ti_context=make_ti_context(),
+        start_date=timezone.utcnow(),
     )
     ti = mocked_parse(what, "basic_dag", task)
 
@@ -631,6 +638,7 @@ def test_dag_parsing_context(make_ti_context, mock_supervisor_comms, monkeypatch
         bundle_info=BundleInfo(name="my-bundle", version=None),
         requests_fd=0,
         ti_context=make_ti_context(dag_id=dag_id, run_id="c"),
+        start_date=timezone.utcnow(),
     )
 
     mock_supervisor_comms.get_message.return_value = what
@@ -727,10 +735,14 @@ class TestRuntimeTaskInstance:
             run_id="test_run",
             try_number=1,
         )
+        start_date = timezone.datetime(2025, 1, 1)
 
         # Keep the context empty
         runtime_ti = RuntimeTaskInstance.model_construct(
-            **ti.model_dump(exclude_unset=True), task=task, _ti_context_from_server=None
+            **ti.model_dump(exclude_unset=True),
+            task=task,
+            _ti_context_from_server=None,
+            start_date=start_date,
         )
         context = runtime_ti.get_template_context()
 
@@ -748,6 +760,7 @@ class TestRuntimeTaskInstance:
             "outlet_events": OutletEventAccessors(),
             "outlets": task.outlets,
             "run_id": "test_run",
+            "start_date": start_date,
             "task": task,
             "task_instance": runtime_ti,
             "ti": runtime_ti,
@@ -1166,7 +1179,9 @@ class TestTaskRunnerCallsListeners:
             try_number=1,
         )
 
-        runtime_ti = RuntimeTaskInstance.model_construct(**ti.model_dump(exclude_unset=True), task=task)
+        runtime_ti = RuntimeTaskInstance.model_construct(
+            **ti.model_dump(exclude_unset=True), task=task, start_date=timezone.utcnow()
+        )
         log = mock.MagicMock()
 
         state = run(runtime_ti, log)
@@ -1202,7 +1217,9 @@ class TestTaskRunnerCallsListeners:
             try_number=1,
         )
 
-        runtime_ti = RuntimeTaskInstance.model_construct(**ti.model_dump(exclude_unset=True), task=task)
+        runtime_ti = RuntimeTaskInstance.model_construct(
+            **ti.model_dump(exclude_unset=True), task=task, start_date=timezone.utcnow()
+        )
         log = mock.MagicMock()
 
         state = run(runtime_ti, log)

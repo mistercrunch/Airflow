@@ -88,6 +88,9 @@ class RuntimeTaskInstance(TaskInstance):
     max_tries: int = 0
     """The maximum number of retries for the task."""
 
+    start_date: datetime
+    """Start date of the task instance."""
+
     def get_template_context(self) -> Context:
         # TODO: Move this to `airflow.sdk.execution_time.context`
         #   once we port the entire context logic from airflow/utils/context.py ?
@@ -136,7 +139,7 @@ class RuntimeTaskInstance(TaskInstance):
                 "logical_date": logical_date,
                 "ds": ds,
                 "ds_nodash": ds_nodash,
-                "start_date": self._ti_context_from_server.start_date,
+                "start_date": self.start_date,
                 "task_instance_key_str": f"{self.task.dag_id}__{self.task.task_id}__{ds_nodash}",
                 "task_reschedule_count": self._ti_context_from_server.task_reschedule_count,
                 "ts": ts,
@@ -355,6 +358,7 @@ def parse(what: StartupDetails) -> RuntimeTaskInstance:
         task=task,
         _ti_context_from_server=what.ti_context,
         max_tries=what.ti_context.max_tries,
+        start_date=what.start_date,
     )
 
 
@@ -606,6 +610,8 @@ def run(ti: RuntimeTaskInstance, log: Logger) -> IntermediateTIState | TerminalT
         log.exception("Task failed with exception")
         msg = TaskState(state=TerminalTIState.FAILED, end_date=datetime.now(tz=timezone.utc))
         state = TerminalTIState.FAILED
+    print(msg)
+    print(state)
     if msg:
         SUPERVISOR_COMMS.send_request(msg=msg, log=log)
     return state
