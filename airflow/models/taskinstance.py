@@ -380,7 +380,7 @@ def _run_raw_task(
             TaskInstance.save_to_db(ti=ti, session=session)
             if ti.state == TaskInstanceState.SUCCESS:
                 get_listener_manager().hook.on_task_instance_success(
-                    previous_state=TaskInstanceState.RUNNING, task_instance=ti, session=session
+                    previous_state=TaskInstanceState.RUNNING, task_instance=ti
                 )
 
         return None
@@ -2931,7 +2931,7 @@ class TaskInstance(Base, LoggingMixin):
 
             # Run on_task_instance_running event
             get_listener_manager().hook.on_task_instance_running(
-                previous_state=TaskInstanceState.QUEUED, task_instance=self, session=session
+                previous_state=TaskInstanceState.QUEUED, task_instance=self
             )
 
             def _render_map_index(context: Context, *, jinja_env: jinja2.Environment | None) -> str | None:
@@ -3173,7 +3173,7 @@ class TaskInstance(Base, LoggingMixin):
             callbacks = task.on_retry_callback if task else None
 
         get_listener_manager().hook.on_task_instance_failed(
-            previous_state=TaskInstanceState.RUNNING, task_instance=ti, error=error, session=session
+            previous_state=TaskInstanceState.RUNNING, task_instance=ti, error=error
         )
 
         return {
