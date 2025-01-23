@@ -23,7 +23,9 @@ from typing import TYPE_CHECKING, Any, Union
 
 import attrs
 import structlog
+from sqlalchemy import select
 
+from airflow.models import AssetEvent
 from airflow.sdk.definitions._internal.contextmanager import _CURRENT_CONTEXT
 from airflow.sdk.definitions._internal.types import NOTSET
 from airflow.sdk.definitions.asset import (
@@ -38,9 +40,13 @@ from airflow.sdk.definitions.asset import (
     BaseAssetUniqueKey,
 )
 from airflow.sdk.exceptions import AirflowRuntimeError, ErrorType
+from airflow.utils.db import LazySelectSequence
 
 if TYPE_CHECKING:
     from uuid import UUID
+
+    from sqlalchemy.engine import Row
+    from sqlalchemy.sql.expression import Select, TextClause
 
     from airflow.sdk.definitions.connection import Connection
     from airflow.sdk.definitions.context import Context
@@ -278,6 +284,30 @@ class OutletEventAccessors(Mapping[Union[Asset, AssetAlias], OutletEventAccessor
         if TYPE_CHECKING:
             assert isinstance(msg, AssetResult)
         return Asset(**msg.model_dump(exclude={"type"}))
+
+
+class LazyAssetEventSelectSequence(LazySelectSequence[AssetEvent]):
+    """
+    List-like interface to lazily access AssetEvent rows.
+
+    :meta private:
+    """
+
+    @staticmethod
+    def _rebuild_select(stmt: TextClause) -> Select:
+        return select(AssetEvent).from_statement(stmt)
+
+    @staticmethod
+    def _process_row(row: Row) -> AssetEvent:
+        return row[0]
+
+
+@attrs.define(init=False)
+class InletEventsAccessors(Mapping[Union[int, Asset, AssetAlias, AssetRef], LazyAssetEventSelectSequence]):
+    _inlets: list[Any]
+    _assets: dict[AssetUniqueKey, Asset]
+    _asset_aliases: dict[AssetAliasUniqueKey, AssetAlias]
+    _session: Session
 
 
 @cache  # Prevent multiple API access.
