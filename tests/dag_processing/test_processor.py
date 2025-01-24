@@ -99,6 +99,7 @@ class TestDagFileProcessor:
                 logical_date=DEFAULT_DATE,
                 run_type=DagRunType.SCHEDULED,
                 data_interval=dag.infer_automated_data_interval(DEFAULT_DATE),
+                run_after=DEFAULT_DATE,
                 triggered_by=DagRunTriggeredByType.TEST,
                 session=session,
             )
