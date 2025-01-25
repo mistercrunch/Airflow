@@ -784,7 +784,8 @@ class XComFilterStartsWith(fab_sqlafilters.FilterStartsWith):
 
     def apply(self, query, value):
         query, field = get_field_setup_query(query, self.model, self.column_name)
-        return query.filter(field.cast(types.String).ilike(value + "%"))
+        trimmed_value = func.btrim(func.convert_from(field, "UTF8"), '"')
+        return query.filter(trimmed_value.ilike(value + "%"))
 
 
 class XComFilterEndsWith(fab_sqlafilters.FilterEndsWith):
@@ -792,7 +793,8 @@ class XComFilterEndsWith(fab_sqlafilters.FilterEndsWith):
 
     def apply(self, query, value):
         query, field = get_field_setup_query(query, self.model, self.column_name)
-        return query.filter(field.cast(types.String).ilike("%" + value))
+        trimmed_value = func.btrim(func.convert_from(field, "UTF8"), '"')
+        return query.filter(trimmed_value.ilike("%" + value))
 
 
 class XComFilterEqual(fab_sqlafilters.FilterEqual):
@@ -801,7 +803,8 @@ class XComFilterEqual(fab_sqlafilters.FilterEqual):
     def apply(self, query, value):
         query, field = get_field_setup_query(query, self.model, self.column_name)
         value = set_value_to_type(self.datamodel, self.column_name, value)
-        return query.filter(field.cast(types.String) == value)
+        trimmed_value = func.btrim(func.convert_from(field, "UTF8"), '"')
+        return query.filter(trimmed_value == value)
 
 
 class XComFilterContains(fab_sqlafilters.FilterContains):
@@ -809,7 +812,8 @@ class XComFilterContains(fab_sqlafilters.FilterContains):
 
     def apply(self, query, value):
         query, field = get_field_setup_query(query, self.model, self.column_name)
-        return query.filter(field.cast(types.String).ilike("%" + value + "%"))
+        trimmed_value = func.btrim(func.convert_from(field, "UTF8"), '"')
+        return query.filter(trimmed_value.ilike("%" + value + "%"))
 
 
 class XComFilterNotStartsWith(fab_sqlafilters.FilterNotStartsWith):
@@ -817,7 +821,8 @@ class XComFilterNotStartsWith(fab_sqlafilters.FilterNotStartsWith):
 
     def apply(self, query, value):
         query, field = get_field_setup_query(query, self.model, self.column_name)
-        return query.filter(~field.cast(types.String).ilike(value + "%"))
+        trimmed_value = func.btrim(func.convert_from(field, "UTF8"), '"')
+        return query.filter(~trimmed_value.ilike(value + "%"))
 
 
 class XComFilterNotEndsWith(fab_sqlafilters.FilterNotEndsWith):
@@ -825,7 +830,8 @@ class XComFilterNotEndsWith(fab_sqlafilters.FilterNotEndsWith):
 
     def apply(self, query, value):
         query, field = get_field_setup_query(query, self.model, self.column_name)
-        return query.filter(~field.cast(types.String).ilike(value + "%"))
+        trimmed_value = func.btrim(func.convert_from(field, "UTF8"), '"')
+        return query.filter(~trimmed_value.ilike("%" + value))
 
 
 class XComFilterNotContains(fab_sqlafilters.FilterNotContains):
@@ -833,7 +839,8 @@ class XComFilterNotContains(fab_sqlafilters.FilterNotContains):
 
     def apply(self, query, value):
         query, field = get_field_setup_query(query, self.model, self.column_name)
-        return query.filter(~field.cast(types.String).ilike("%" + value + "%"))
+        trimmed_value = func.btrim(func.convert_from(field, "UTF8"), '"')
+        return query.filter(~trimmed_value.ilike("%" + value + "%"))
 
 
 class XComFilterNotEqual(fab_sqlafilters.FilterNotEqual):
@@ -841,9 +848,9 @@ class XComFilterNotEqual(fab_sqlafilters.FilterNotEqual):
 
     def apply(self, query, value):
         query, field = get_field_setup_query(query, self.model, self.column_name)
+        trimmed_value = func.btrim(func.convert_from(field, "UTF8"), '"')
         value = set_value_to_type(self.datamodel, self.column_name, value)
-
-        return query.filter(field.cast(types.String) != value)
+        return query.filter(trimmed_value != value)
 
 
 class AirflowFilterConverter(fab_sqlafilters.SQLAFilterConverter):
