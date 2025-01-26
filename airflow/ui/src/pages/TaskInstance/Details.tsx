@@ -31,6 +31,9 @@ import { useConfig } from "src/queries/useConfig";
 import { getDuration } from "src/utils";
 import { isStatePending } from "src/utils/refresh";
 
+import { ExtraLinks } from "./ExtraLinks";
+import { TriggererInfo } from "./TriggererInfo";
+
 export const Details = () => {
   const { dagId = "", runId = "", taskId = "" } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -85,6 +88,8 @@ export const Details = () => {
           taskInstance={taskInstance}
         />
       )}
+      <ExtraLinks />
+      {taskInstance?.state === "deferred" && <TriggererInfo taskInstance={taskInstance} />}
       <Table.Root striped>
         <Table.Body>
           <Table.Row>
