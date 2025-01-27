@@ -74,6 +74,7 @@ class StartupDetails(BaseModel):
     dag_rel_path: str
     bundle_info: BundleInfo
     requests_fd: int
+    start_date: datetime
     """
     The channel for the task to send requests over.
 
