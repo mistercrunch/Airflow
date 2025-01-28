@@ -431,7 +431,12 @@ class TestGitSyncSchedulerTest:
         container_search_result = jmespath.search(
             "spec.template.spec.containers[?name == 'git-sync']", docs[0]
         )
+        init_container_search_result = jmespath.search(
+            "spec.template.spec.initContainers[?name == 'git-sync-init']", docs[0]
+        )
         assert "livenessProbe" in container_search_result[0]
         assert "readinessProbe" in container_search_result[0]
+        assert "readinessProbe" not in init_container_search_result[0]
+        assert "readinessProbe" not in init_container_search_result[0]
         assert livenessProbe == container_search_result[0]["livenessProbe"]
         assert readinessProbe == container_search_result[0]["readinessProbe"]
