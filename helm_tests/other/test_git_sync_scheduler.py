@@ -400,31 +400,37 @@ class TestGitSyncSchedulerTest:
         assert jmespath.search("spec.template.spec.containers[1].resources.requests.cpu", docs[0]) == "300m"
 
     def test_liveliness_and_readiness_probes_are_configurable(self):
-        livenessProbe = {  "failureThreshold": 10, "exec": { "command": ["/bin/true"] },
-      "initialDelaySeconds": 0,
-      "periodSeconds": 1,
-      "successThreshold": 1,
-      "timeoutSeconds": 5
-      }
-        readinessProbe = {  "failureThreshold": 10, "exec": { "command": ["/bin/true"] },
-          "initialDelaySeconds": 0,
-          "periodSeconds": 1,
-          "successThreshold": 1,
-          "timeoutSeconds": 5
-          }
+        livenessProbe = {
+            "failureThreshold": 10,
+            "exec": {"command": ["/bin/true"]},
+            "initialDelaySeconds": 0,
+            "periodSeconds": 1,
+            "successThreshold": 1,
+            "timeoutSeconds": 5,
+        }
+        readinessProbe = {
+            "failureThreshold": 10,
+            "exec": {"command": ["/bin/true"]},
+            "initialDelaySeconds": 0,
+            "periodSeconds": 1,
+            "successThreshold": 1,
+            "timeoutSeconds": 5,
+        }
         docs = render_chart(
             values={
                 "dags": {
                     "gitSync": {
                         "enabled": True,
                         "livenessProbe": livenessProbe,
-                        "readinessProbe": readinessProbe
+                        "readinessProbe": readinessProbe,
                     },
                 }
             },
             show_only=["templates/scheduler/scheduler-deployment.yaml"],
         )
-        container_search_result = jmespath.search("spec.template.spec.containers[?name == 'git-sync']", docs[0])
+        container_search_result = jmespath.search(
+            "spec.template.spec.containers[?name == 'git-sync']", docs[0]
+        )
         assert "livenessProbe" in container_search_result[0]
         assert "readinessProbe" in container_search_result[0]
         assert livenessProbe == container_search_result[0]["livenessProbe"]
