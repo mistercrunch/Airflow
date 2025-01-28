@@ -46,6 +46,7 @@ from uuid6 import uuid7
 
 import airflow.models
 from airflow.configuration import conf
+from airflow.dag_processing.bundles.manager import DagBundlesManager
 from airflow.dag_processing.collection import update_dag_parsing_results_in_db
 from airflow.dag_processing.processor import DagFileParsingResult, DagFileProcessorProcess
 from airflow.exceptions import AirflowException
@@ -225,11 +226,7 @@ class DagFileProcessorManager:
         #     "Checking for new files in %s every %s seconds", self._dag_directory, self.dag_dir_list_interval
         # )
 
-        from airflow.dag_processing.bundles.manager import DagBundlesManager
-
         DagBundlesManager().sync_bundles_to_db()
-
-        self.log.info("Getting all DAG bundles")
         self._dag_bundles = list(DagBundlesManager().get_all_dag_bundles())
         self._symlink_latest_log_directory()
 
@@ -485,7 +482,12 @@ class DagFileProcessorManager:
 
             bundle_file_paths = self._find_files_in_bundle(bundle)
 
+            # Now that we have the files present in the latest bundle,
+            # we need to update the file paths to include any new ones
+            # and remove any that are no longer in the bundle.
+            # We do this by removing all existing files that are in this bundle
             new_file_paths = [f for f in self._file_paths if f.bundle_name != bundle.name]
+            # And then add all the current files in
             new_file_paths.extend(
                 DagFileInfo(path=path, bundle_path=bundle.path, bundle_name=bundle.name)
                 for path in bundle_file_paths
