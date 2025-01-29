@@ -483,11 +483,11 @@ class DagFileProcessorManager:
             bundle_file_paths = self._find_files_in_bundle(bundle)
 
             # Now that we have the files present in the latest bundle,
-            # we need to update the file paths to include any new ones
-            # and remove any that are no longer in the bundle.
+            # we need to update file_paths to include any new files
+            # and remove any files that are no longer in the bundle.
             # We do this by removing all existing files that are in this bundle
+            # and then adding all the current files back in.
             new_file_paths = [f for f in self._file_paths if f.bundle_name != bundle.name]
-            # And then add all the current files in
             new_file_paths.extend(
                 DagFileInfo(path=path, bundle_path=bundle.path, bundle_name=bundle.name)
                 for path in bundle_file_paths
