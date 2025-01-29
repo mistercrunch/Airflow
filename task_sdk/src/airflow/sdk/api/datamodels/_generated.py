@@ -110,6 +110,9 @@ class TIDeferredStatePayload(BaseModel):
     Schema for updating TaskInstance to a deferred state.
     """
 
+    model_config = ConfigDict(
+        extra="forbid",
+    )
     state: Annotated[Literal["deferred"] | None, Field(title="State")] = "deferred"
     classpath: Annotated[str, Field(title="Classpath")]
     trigger_kwargs: Annotated[dict[str, Any] | None, Field(title="Trigger Kwargs")] = None
@@ -122,6 +125,9 @@ class TIEnterRunningPayload(BaseModel):
     Schema for updating TaskInstance to 'RUNNING' state with minimal required fields.
     """
 
+    model_config = ConfigDict(
+        extra="forbid",
+    )
     state: Annotated[Literal["running"] | None, Field(title="State")] = "running"
     hostname: Annotated[str, Field(title="Hostname")]
     unixname: Annotated[str, Field(title="Unixname")]
@@ -134,6 +140,9 @@ class TIHeartbeatInfo(BaseModel):
     Schema for TaskInstance heartbeat endpoint.
     """
 
+    model_config = ConfigDict(
+        extra="forbid",
+    )
     hostname: Annotated[str, Field(title="Hostname")]
     pid: Annotated[int, Field(title="Pid")]
 
@@ -164,6 +173,9 @@ class TITargetStatePayload(BaseModel):
     Schema for updating TaskInstance to a target state, excluding terminal and running states.
     """
 
+    model_config = ConfigDict(
+        extra="forbid",
+    )
     state: IntermediateTIState
 
 
@@ -202,6 +214,9 @@ class VariableResponse(BaseModel):
     Variable schema for responses with fields that are needed for Runtime.
     """
 
+    model_config = ConfigDict(
+        extra="forbid",
+    )
     key: Annotated[str, Field(title="Key")]
     value: Annotated[str | None, Field(title="Value")] = None
 
@@ -211,6 +226,9 @@ class XComResponse(BaseModel):
     XCom schema for responses with fields that are needed for Runtime.
     """
 
+    model_config = ConfigDict(
+        extra="forbid",
+    )
     key: Annotated[str, Field(title="Key")]
     value: Annotated[Any, Field(title="Value")]
 
@@ -271,5 +289,8 @@ class TITerminalStatePayload(BaseModel):
     Schema for updating TaskInstance to a terminal state except SUCCESS state.
     """
 
+    model_config = ConfigDict(
+        extra="forbid",
+    )
     state: TerminalTIState
     end_date: Annotated[datetime, Field(title="End Date")]
