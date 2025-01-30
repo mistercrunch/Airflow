@@ -21,6 +21,60 @@
 
 .. towncrier release notes start
 
+Airflow 2.10.5 (2025-01-28)
+---------------------------
+
+Significant Changes
+^^^^^^^^^^^^^^^^^^^
+
+Ensure teardown tasks are executed when DAG run is set to failed
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+Previously when a DAG run was manually set to "failed" or to "success" state the terminal state was set to all tasks.
+But this was a gap for cases when setup- and teardown tasks were defined: If teardown was used to clean-up infrastructure
+or other resources, they were also skipped and thus resources could stay allocated.
+
+As of now when setup tasks had been executed before and the DAG is manually set to "failed" or "success" then teardown
+tasks are executed. Teardown tasks are skipped  if the setup was also skipped.
+
+As a side effect this means if the DAG contains teardown tasks, then the manual marking of DAG as "failed" or "success"
+will need to keep the DAG in running state to ensure that teardown tasks will be scheduled. They would not be scheduled
+if the DAG is directly set to "failed" or "success". (#45530)
+
+
+Bug Fixes
+"""""""""
+
+- Prevent using ``trigger_rule=TriggerRule.ALWAYS`` in a task-generated mapping within bare tasks (#44751)
+- Fix short circuit in mapped tasks (#44912)
+- Fix premature evaluation in mapped task group (#44937)
+- Fix task_id validation in BaseOperator (#44938) (#44938)
+- Allow fetching XCom with forward slash from the API and escape it in the UI (#45134)
+- Fix ``FileTaskHandler`` only read from default executor (#46000)
+- Fix empty task instance for log (#45702) (#45703)
+- Remove ``skip_if`` and ``run_if`` in python source (#41832) (#45680)
+- Log action get the correct request body (#45546) (#45560)
+- Ensure teardown tasks are executed when DAG run is set to failed (#45530) (#45581)
+- Do not update DR on TI update after task execution (#45348)
+- Fix update issues for object and advanced-arrays fields when empty default (#45313) (#45315)
+- Fixed the endless reschedule (#45224) (#45250)
+- Allow fetching XCom with forward slash from the API and escape it in the UI (#45134) (#45137)
+- Evaluate None in SQLAlchemy's extended JSON type decorator (#45119) (#45120)
+- Allow Dynamic Tasks to be Searchable Using map_index_template (#45109) (#45122)
+- Handle relative paths when sanitizing URLs (#41995) (#45080)
+- Set Autocomplete Off on Login Form (#44929) (#44940)
+- Add Webserver parameters ``max_form_parts``, ``max_form_memory_size`` (#46243) (#45749)
+- Fixed thread local _sentinel.callers defect and added test cases (#44646) (#46280)
+
+
+Miscellaneous
+"""""""""""""
+
+- Deprecate conf from Task Context (#44968)
+- Add traceback log output when SIGTERMs was sent (#44880) (#45077)
+- Removed the ability for Operators to specify their own "scheduling deps" (#45713) (#45742)
+- Deprecate ``conf`` from Task Context (#44993)
+
 Airflow 2.10.4 (2024-12-09)
 ---------------------------
 
@@ -223,6 +277,11 @@ Airflow 2.10.0 (2024-08-15)
 Significant Changes
 ^^^^^^^^^^^^^^^^^^^
 
+Scarf based telemetry: Airflow now collect telemetry data (#39510)
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+Airflow integrates Scarf to collect basic usage data during operation. Deployments can opt-out of data collection by
+setting the ``[usage_data_collection]enabled`` option to ``False``, or the ``SCARF_ANALYTICS=false`` environment variable.
+
 Datasets no longer trigger inactive DAGs (#38891)
 """""""""""""""""""""""""""""""""""""""""""""""""
 
@@ -270,12 +329,6 @@ Using Multiple Executors Concurrently (#40701)
 Previously known as hybrid executors, this new feature allows Airflow to use multiple executors concurrently. DAGs, or even individual tasks, can be configured
 to use a specific executor that suits its needs best. A single DAG can contain tasks all using different executors. Please see the Airflow documentation for
 more details. Note: This feature is still experimental. See `documentation on Executor <https://airflow.apache.org/docs/apache-airflow/stable/core-concepts/executor/index.html#using-multiple-executors-concurrently>`_ for a more detailed description.
-
-Scarf based telemetry: Does Airflow collect any telemetry data? (#39510)
-""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
-Airflow integrates Scarf to collect basic usage data during operation. Deployments can opt-out of data collection by setting the ``[usage_data_collection]enabled`` option to False, or the SCARF_ANALYTICS=false environment variable.
-See `FAQ on this <https://airflow.apache.org/docs/apache-airflow/stable/faq.html#does-airflow-collect-any-telemetry-data>`_ for more information.
-
 
 New Features
 """"""""""""

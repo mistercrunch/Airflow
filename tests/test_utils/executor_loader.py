@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -15,21 +15,19 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-set -euxo pipefail
+from __future__ import annotations
 
-cd "$( dirname "${BASH_SOURCE[0]}" )/../../"
+from typing import TYPE_CHECKING
 
-PYTHON_ARG=""
+import airflow.executors.executor_loader as executor_loader
 
-PIP_VERSION="25.0"
-UV_VERSION="0.5.24"
-if [[ ${PYTHON_VERSION=} != "" ]]; then
-    PYTHON_ARG="--python=$(which python"${PYTHON_VERSION}") "
-fi
+if TYPE_CHECKING:
+    from airflow.executors.executor_utils import ExecutorName
 
-python -m pip install --upgrade "pip==${PIP_VERSION}"
-python -m pip install "uv==${UV_VERSION}"
-uv tool uninstall apache-airflow-breeze >/dev/null 2>&1 || true
-# shellcheck disable=SC2086
-uv tool install ${PYTHON_ARG} --force --editable ./dev/breeze/
-echo '/home/runner/.local/bin' >> "${GITHUB_PATH}"
+
+def clean_executor_loader_module():
+    """Clean the executor_loader state, as it stores global variables in the module, causing side effects for some tests."""
+    executor_loader._alias_to_executors: dict[str, ExecutorName] = {}
+    executor_loader._module_to_executors: dict[str, ExecutorName] = {}
+    executor_loader._classname_to_executors: dict[str, ExecutorName] = {}
+    executor_loader._executor_names: list[ExecutorName] = []
