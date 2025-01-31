@@ -18,33 +18,38 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import patch
 
 import pytest
 
 from airflow.models import Connection
 from airflow.providers.dingding.hooks.dingding import DingdingHook
-from airflow.utils import db
 
 pytestmark = pytest.mark.db_test
+
+
+def get_airflow_connection(conn_id: str = "dingding_conn_id", host: str | None = "https://oapi.dingtalk.com"):
+    return Connection(conn_id=conn_id, conn_type="dingding", host=host, password="you_token_here")
 
 
 class TestDingdingHook:
     conn_id = "dingding_conn_id_test"
 
-    def setup_method(self):
-        db.merge_conn(
-            Connection(
-                conn_id=self.conn_id,
-                conn_type="dingding",
-                host="https://oapi.dingtalk.com",
-                password="you_token_here",
-            )
-        )
+    def test_get_conn(self):
+        with patch(
+            "airflow.hooks.base.BaseHook.get_connection",
+            side_effect=lambda conn_id: get_airflow_connection(conn_id=conn_id, host=None),
+        ):
+            hook = DingdingHook(dingding_conn_id=self.conn_id)
+            assert hook.base_url == ""
+            hook.get_conn(headers={})
+            assert hook.base_url == "https://oapi.dingtalk.com"
 
     def test_get_endpoint_conn_id(self):
-        hook = DingdingHook(dingding_conn_id=self.conn_id)
-        endpoint = hook._get_endpoint()
-        assert endpoint == "robot/send?access_token=you_token_here"
+        with patch("airflow.hooks.base.BaseHook.get_connection", side_effect=get_airflow_connection):
+            hook = DingdingHook(dingding_conn_id=self.conn_id)
+            endpoint = hook._get_endpoint()
+            assert endpoint == "robot/send?access_token=you_token_here"
 
     def test_build_text_message_not_remind(self):
         config = {

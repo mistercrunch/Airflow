@@ -73,12 +73,11 @@ class LivyHook(HttpHook):
         BatchState.ERROR,
     }
 
-    _def_headers = {"Content-Type": "application/json", "Accept": "application/json"}
-
     conn_name_attr = "livy_conn_id"
     default_conn_name = "livy_default"
     conn_type = "livy"
     hook_name = "Apache Livy"
+    default_headers = {"Content-Type": "application/json", "Accept": "application/json"}
 
     def __init__(
         self,
@@ -94,18 +93,6 @@ class LivyHook(HttpHook):
         self.extra_options = extra_options or {}
         if auth_type:
             self.auth_type = auth_type
-
-    def get_conn(self, headers: dict[str, Any] | None = None) -> Any:
-        """
-        Return http session for use with requests.
-
-        :param headers: additional headers to be passed through as a dictionary
-        :return: requests session
-        """
-        tmp_headers = self._def_headers.copy()  # setting default headers
-        if headers:
-            tmp_headers.update(headers)
-        return super().get_conn(tmp_headers)
 
     def run_method(
         self,

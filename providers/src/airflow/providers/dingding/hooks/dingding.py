@@ -19,9 +19,6 @@ from __future__ import annotations
 
 import json
 
-import requests
-from requests import Session
-
 from airflow.exceptions import AirflowException
 from airflow.providers.http.hooks.http import HttpHook
 
@@ -47,6 +44,7 @@ class DingdingHook(HttpHook):
     default_conn_name = "dingding_default"
     conn_type = "dingding"
     hook_name = "DingTalk Custom Robot (Dingding)"
+    default_host = "https://oapi.dingtalk.com"
 
     def __init__(
         self,
@@ -85,21 +83,6 @@ class DingdingHook(HttpHook):
         else:
             data = {"msgtype": self.message_type, self.message_type: self.message}
         return json.dumps(data)
-
-    def get_conn(self, headers: dict | None = None) -> Session:
-        """
-        Overwrite HttpHook get_conn.
-
-        We just need base_url and headers, and not don't need generic params.
-
-        :param headers: additional headers to be passed through as a dictionary
-        """
-        conn = self.get_connection(self.http_conn_id)
-        self.base_url = conn.host if conn.host else "https://oapi.dingtalk.com"
-        session = requests.Session()
-        if headers:
-            session.headers.update(headers)
-        return session
 
     def send(self) -> None:
         """Send DingTalk Custom Robot message."""

@@ -238,7 +238,7 @@
   "apache.livy": {
     "deps": [
       "aiohttp>=3.9.2",
-      "apache-airflow-providers-http",
+      "apache-airflow-providers-http>=5.0.1",
       "apache-airflow>=2.9.0",
       "asgiref>=2.3.0"
     ],
@@ -483,7 +483,7 @@
   },
   "dingding": {
     "deps": [
-      "apache-airflow-providers-http",
+      "apache-airflow-providers-http>=5.0.1",
       "apache-airflow>=2.9.0"
     ],
     "devel-deps": [],
