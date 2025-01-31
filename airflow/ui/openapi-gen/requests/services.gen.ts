@@ -2045,6 +2045,7 @@ export class TaskInstanceService {
    * @param data.pool
    * @param data.queue
    * @param data.executor
+   * @param data.versionNumber
    * @param data.limit
    * @param data.offset
    * @param data.orderBy
@@ -2077,6 +2078,7 @@ export class TaskInstanceService {
         pool: data.pool,
         queue: data.queue,
         executor: data.executor,
+        version_number: data.versionNumber,
         limit: data.limit,
         offset: data.offset,
         order_by: data.orderBy,
@@ -2319,6 +2321,7 @@ export class TaskInstanceService {
    * @param data.pool
    * @param data.queue
    * @param data.executor
+   * @param data.versionNumber
    * @param data.limit
    * @param data.offset
    * @param data.orderBy
@@ -2350,6 +2353,7 @@ export class TaskInstanceService {
         pool: data.pool,
         queue: data.queue,
         executor: data.executor,
+        version_number: data.versionNumber,
         limit: data.limit,
         offset: data.offset,
         order_by: data.orderBy,
