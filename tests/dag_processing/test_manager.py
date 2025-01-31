@@ -707,7 +707,7 @@ class TestDagFileProcessorManager:
             manager._dag_bundles = list(DagBundlesManager().get_all_dag_bundles())
 
             dag1_path = DagFileInfo(
-                bundle_name="testing", path=f"{tmp_path}/file1.py", bundle_path=Path(tmp_path)
+                bundle_name="testing", rel_path=Path("file1.py"), bundle_path=Path(tmp_path)
             )
             dag1_req1 = DagCallbackRequest(
                 filepath="file1.py",
@@ -729,7 +729,7 @@ class TestDagFileProcessorManager:
             )
 
             dag2_path = DagFileInfo(
-                bundle_name="testing", path=f"{tmp_path}/file2.py", bundle_path=Path(tmp_path)
+                bundle_name="testing", rel_path=Path("file2.py"), bundle_path=Path(tmp_path)
             )
             dag2_req1 = DagCallbackRequest(
                 filepath="file2.py",
@@ -773,7 +773,7 @@ class TestDagFileProcessorManager:
             assert start.call_args_list == [
                 mock.call(
                     id=mock.ANY,
-                    path=dag2_path.path,
+                    path=Path(dag2_path.bundle_path, dag2_path.rel_path),
                     bundle_path=dag2_path.bundle_path,
                     callbacks=[dag2_req1],
                     selector=mock.ANY,
@@ -781,7 +781,7 @@ class TestDagFileProcessorManager:
                 ),
                 mock.call(
                     id=mock.ANY,
-                    path=dag1_path.path,
+                    path=Path(dag1_path.bundle_path, dag1_path.rel_path),
                     bundle_path=dag1_path.bundle_path,
                     callbacks=[dag1_req1, dag1_req2],
                     selector=mock.ANY,
