@@ -661,7 +661,6 @@ class TestCliTasks:
             logical_date=default_date2,
             data_interval=data_interval,
             run_type=DagRunType.MANUAL,
-            external_trigger=True,
             **v3_kwargs,
         )
         ti2 = TaskInstance(task2, run_id=dagrun.run_id)

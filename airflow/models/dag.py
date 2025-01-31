@@ -180,7 +180,7 @@ def _get_model_data_interval(
     return DataInterval(start, end)
 
 
-def get_last_dagrun(dag_id, session, include_externally_triggered=False):
+def get_last_dagrun(dag_id, session, include_manually_triggered=False):
     """
     Return the last dag run for a dag, None if there was none.
 
@@ -189,8 +189,8 @@ def get_last_dagrun(dag_id, session, include_externally_triggered=False):
     """
     DR = DagRun
     query = select(DR).where(DR.dag_id == dag_id)
-    if not include_externally_triggered:
-        query = query.where(DR.external_trigger == expression.false())
+    if not include_manually_triggered:
+        query = query.where(DR.run_type != DagRunType.MANUAL)
     query = query.order_by(DR.logical_date.desc())
     return session.scalar(query.limit(1))
 
@@ -251,7 +251,6 @@ def _create_orm_dagrun(
     logical_date: datetime | None,
     data_interval: DataInterval | None,
     start_date: datetime | None,
-    external_trigger: bool,
     conf: Any,
     state: DagRunState | None,
     run_type: DagRunType,
@@ -266,7 +265,6 @@ def _create_orm_dagrun(
         run_id=run_id,
         logical_date=logical_date,
         start_date=start_date,
-        external_trigger=external_trigger,
         conf=conf,
         state=state,
         run_type=run_type,
@@ -708,16 +706,16 @@ class DAG(TaskSDKDag, LoggingMixin):
                 break
 
     @provide_session
-    def get_last_dagrun(self, session=NEW_SESSION, include_externally_triggered=False):
+    def get_last_dagrun(self, session=NEW_SESSION, include_manually_triggered=False):
         return get_last_dagrun(
-            self.dag_id, session=session, include_externally_triggered=include_externally_triggered
+            self.dag_id, session=session, include_manually_triggered=include_manually_triggered
         )
 
     @provide_session
-    def has_dag_runs(self, session=NEW_SESSION, include_externally_triggered=True) -> bool:
+    def has_dag_runs(self, session=NEW_SESSION, include_manually_triggered=True) -> bool:
         return (
             get_last_dagrun(
-                self.dag_id, session=session, include_externally_triggered=include_externally_triggered
+                self.dag_id, session=session, include_manually_triggered=include_manually_triggered
             )
             is not None
         )
@@ -1724,7 +1722,6 @@ class DAG(TaskSDKDag, LoggingMixin):
         conf: dict | None = None,
         run_type: DagRunType,
         triggered_by: DagRunTriggeredByType,
-        external_trigger: bool = False,
         dag_version: DagVersion | None = None,
         state: DagRunState,
         start_date: datetime | None = None,
@@ -1792,7 +1789,6 @@ class DAG(TaskSDKDag, LoggingMixin):
             run_id=run_id,
             logical_date=logical_date,
             start_date=timezone.coerce_datetime(start_date),
-            external_trigger=external_trigger,
             conf=conf,
             state=state,
             run_type=run_type,
@@ -2160,9 +2156,9 @@ class DagModel(Base):
         return session.scalar(select(cls).where(cls.dag_id == dag_id))
 
     @provide_session
-    def get_last_dagrun(self, session=NEW_SESSION, include_externally_triggered=False):
+    def get_last_dagrun(self, session=NEW_SESSION, include_manually_triggered=False):
         return get_last_dagrun(
-            self.dag_id, session=session, include_externally_triggered=include_externally_triggered
+            self.dag_id, session=session, include_manually_triggered=include_manually_triggered
         )
 
     def get_is_paused(self, *, session: Session | None = None) -> bool:
