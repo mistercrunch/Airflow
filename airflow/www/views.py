@@ -2240,7 +2240,6 @@ class Airflow(AirflowBaseView):
                 conf=run_conf,
                 run_type=DagRunType.MANUAL,
                 triggered_by=DagRunTriggeredByType.UI,
-                external_trigger=True,
                 dag_version=DagVersion.get_latest_version(dag.dag_id),
                 state=DagRunState.QUEUED,
                 session=session,
@@ -4784,7 +4783,6 @@ class DagRunModelView(AirflowModelView):
         "start_date",
         "end_date",
         "note",
-        "external_trigger",
         "conf",
         "duration",
     ]
@@ -4797,7 +4795,6 @@ class DagRunModelView(AirflowModelView):
         "start_date",
         "end_date",
         "note",
-        "external_trigger",
     ]
     label_columns = {
         "logical_date": "Logical Date",
@@ -4823,7 +4820,6 @@ class DagRunModelView(AirflowModelView):
         "start_date",
         "end_date",
         # "note", # todo: maybe figure out how to re-enable this
-        "external_trigger",
         "conf",
     ]
 

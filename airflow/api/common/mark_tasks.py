@@ -141,7 +141,7 @@ def find_task_relatives(tasks, downstream, upstream):
 @provide_session
 def get_run_ids(dag: DAG, run_id: str, future: bool, past: bool, session: SASession = NEW_SESSION):
     """Return DAG executions' run_ids."""
-    last_dagrun = dag.get_last_dagrun(include_externally_triggered=True, session=session)
+    last_dagrun = dag.get_last_dagrun(include_manually_triggered=True, session=session)
     current_dagrun = dag.get_dagrun(run_id=run_id, session=session)
     first_dagrun = session.scalar(
         select(DagRun).filter(DagRun.dag_id == dag.dag_id).order_by(DagRun.logical_date.asc()).limit(1)

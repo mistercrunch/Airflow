@@ -151,7 +151,6 @@ class TestDagRunEndpoint:
                 run_type=DagRunType.MANUAL,
                 logical_date=timezone.parse(self.default_time) + timedelta(days=i - 1),
                 start_date=timezone.parse(self.default_time),
-                external_trigger=True,
                 state=state,
                 **triggered_by_kwargs,
             )
@@ -168,7 +167,6 @@ class TestDagRunEndpoint:
                         run_type=DagRunType.MANUAL,
                         logical_date=timezone.parse(self.default_time_2),
                         start_date=timezone.parse(self.default_time),
-                        external_trigger=True,
                         state=state,
                     )
                 )
@@ -200,7 +198,6 @@ class TestGetDagRunBatch(TestDagRunEndpoint):
             "end_date": None,
             "state": "running",
             "logical_date": self.default_time,
-            "external_trigger": True,
             "start_date": self.default_time,
             "conf": {},
             "data_interval_end": None,
@@ -216,7 +213,6 @@ class TestGetDagRunBatch(TestDagRunEndpoint):
             "end_date": None,
             "state": "running",
             "logical_date": self.default_time_2,
-            "external_trigger": True,
             "start_date": self.default_time,
             "conf": {},
             "data_interval_end": None,
