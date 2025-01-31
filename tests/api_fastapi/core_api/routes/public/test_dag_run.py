@@ -27,9 +27,9 @@ from sqlalchemy import select
 from airflow.listeners.listener import get_listener_manager
 from airflow.models import DagModel, DagRun
 from airflow.models.asset import AssetEvent, AssetModel
-from airflow.models.param import Param
 from airflow.operators.empty import EmptyOperator
 from airflow.sdk.definitions.asset import Asset
+from airflow.sdk.definitions.param import Param
 from airflow.utils import timezone
 from airflow.utils.session import provide_session
 from airflow.utils.state import DagRunState, State
@@ -1189,7 +1189,7 @@ class TestTriggerDagRun:
         }
 
         assert response.json() == expected_response_json
-        _check_last_log(session, dag_id=DAG1_ID, event=f"public.dags.{DAG1_ID}.dagRuns", logical_date=None)
+        _check_last_log(session, dag_id=DAG1_ID, event=f"/public/dags/{DAG1_ID}/dagRuns", logical_date=None)
 
     @pytest.mark.parametrize(
         "post_body, expected_detail",
