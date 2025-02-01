@@ -57,3 +57,11 @@ class XComCollectionResponse(BaseModel):
 
     xcom_entries: list[XComResponse]
     total_entries: int
+
+
+class XComCreateRequest(BaseModel):
+    """Request body for creating an XCom entry."""
+
+    key: str
+    value: Any
+    map_index: int = -1
