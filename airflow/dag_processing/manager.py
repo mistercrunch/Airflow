@@ -47,6 +47,7 @@ from uuid6 import uuid7
 
 import airflow.models
 from airflow.configuration import conf
+from airflow.dag_processing.bundles.manager import DagBundlesManager
 from airflow.dag_processing.collection import update_dag_parsing_results_in_db
 from airflow.dag_processing.processor import DagFileParsingResult, DagFileProcessorProcess
 from airflow.exceptions import AirflowException
@@ -106,6 +107,7 @@ class DagFileInfo:
     rel_path: Path
     bundle_name: str
     bundle_path: Path | None = field(compare=False, default=None)
+    bundle_version: str | None = None
 
     @property
     def absolute_path(self) -> Path:
@@ -190,7 +192,7 @@ class DagFileProcessorManager:
     _parsing_start_time: float = attrs.field(init=False)
     _num_run: int = attrs.field(default=0, init=False)
 
-    _callback_to_execute: dict[str, list[CallbackRequest]] = attrs.field(
+    _callback_to_execute: dict[DagFileInfo, list[CallbackRequest]] = attrs.field(
         factory=lambda: defaultdict(list), init=False
     )
 
@@ -231,8 +233,6 @@ class DagFileProcessorManager:
         # TODO: AIP-66 move to report by bundle self.log.info(
         #     "Checking for new files in %s every %s seconds", self._dag_directory, self.dag_dir_list_interval
         # )
-
-        from airflow.dag_processing.bundles.manager import DagBundlesManager
 
         DagBundlesManager().sync_bundles_to_db()
 
@@ -410,18 +410,21 @@ class DagFileProcessorManager:
 
     def _add_callback_to_queue(self, request: CallbackRequest):
         self.log.debug("Queuing %s CallbackRequest: %s", type(request).__name__, request)
-        self.log.warning("Callbacks are not implemented yet!")
-        # TODO: AIP-66 make callbacks bundle aware
-        return
-        self._callback_to_execute[request.full_filepath].append(request)
-        if request.full_filepath in self._file_path_queue:
-            # Remove file paths matching request.full_filepath from self._file_path_queue
-            # Since we are already going to use that filepath to run callback,
-            # there is no need to have same file path again in the queue
-            self._file_path_queue = deque(
-                file_path for file_path in self._file_path_queue if file_path != request.full_filepath
-            )
-        self._add_paths_to_queue([request.full_filepath], True)
+        try:
+            bundle = DagBundlesManager().get_bundle(name=request.bundle_name, version=request.bundle_version)
+        except ValueError:
+            # Bundle no longer configured
+            self.log.error("Bundle %s no longer configured, skipping callback", request.bundle_name)
+            return None
+
+        file_info = DagFileInfo(
+            rel_path=Path(request.filepath),
+            bundle_path=bundle.path,
+            bundle_name=request.bundle_name,
+            bundle_version=request.bundle_version,
+        )
+        self._callback_to_execute[file_info].append(request)
+        self._add_paths_to_queue([file_info], True)
         Stats.incr("dag_processing.other_callback_count")
 
     @classmethod
@@ -681,14 +684,7 @@ class DagFileProcessorManager:
         """
         self._file_paths = new_file_paths
 
-        # clean up the queues; remove anything queued which no longer in the list, including callbacks
-        self._file_path_queue = deque(x for x in self._file_path_queue if x in new_file_paths)
         Stats.gauge("dag_processing.file_path_queue_size", len(self._file_path_queue))
-
-        # TODO: AIP-66 make callbacks bundle aware
-        # callback_paths_to_del = [x for x in self._callback_to_execute if x not in new_file_paths]
-        # for path_to_del in callback_paths_to_del:
-        #     del self._callback_to_execute[path_to_del]
 
         # Stop processors that are working on deleted files
         filtered_processors = {}
@@ -780,8 +776,7 @@ class DagFileProcessorManager:
     def _create_process(self, dag_file: DagFileInfo) -> DagFileProcessorProcess:
         id = uuid7()
 
-        # callback_to_execute_for_file = self._callback_to_execute.pop(file_path, [])
-        callback_to_execute_for_file: list[CallbackRequest] = []
+        callback_to_execute_for_file = self._callback_to_execute.pop(dag_file, [])
 
         return DagFileProcessorProcess.start(
             id=id,
