@@ -83,6 +83,16 @@ class RuntimeTaskInstance(TaskInstance):
     max_tries: int = 0
     """The maximum number of retries for the task."""
 
+    def __rich_repr__(self):
+        yield "id", self.id
+        yield "task_id", self.task_id
+        yield "dag_id", self.dag_id
+        yield "run_id", self.run_id
+        yield "max_tries", self.max_tries
+        yield "task", type(self.task)
+
+    __rich_repr__.angular = True  # type: ignore[attr-defined]
+
     def get_template_context(self) -> Context:
         # TODO: Move this to `airflow.sdk.execution_time.context`
         #   once we port the entire context logic from airflow/utils/context.py ?
@@ -123,8 +133,8 @@ class RuntimeTaskInstance(TaskInstance):
             },
             "conn": ConnectionAccessor(),
         }
-        if self._ti_context_from_server:
-            dag_run = self._ti_context_from_server.dag_run
+        if from_server := self._ti_context_from_server:
+            dag_run = from_server.dag_run
 
             logical_date = dag_run.logical_date
             ds = logical_date.strftime("%Y-%m-%d")
@@ -160,6 +170,11 @@ class RuntimeTaskInstance(TaskInstance):
             }
             context.update(context_from_server)
 
+            if from_server.upstream_map_indexes is not None:
+                # We stash this in here for later use, but we purposefully don't want to document it's
+                # existence. Should this be a private attribute on RuntimeTI instead perhaps?
+                context["_upstream_map_indexes"] = from_server.upstream_map_indexes  # type: ignore [typeddict-unknown-key]
+
         return context
 
     def render_templates(
@@ -190,10 +205,7 @@ class RuntimeTaskInstance(TaskInstance):
         # unmapped BaseOperator created by this function! This is because the
         # MappedOperator is useless for template rendering, and we need to be
         # able to access the unmapped task instead.
-        original_task.render_template_fields(context, jinja_env)
-        # TODO: Add support for rendering templates in the MappedOperator
-        # if isinstance(self.task, MappedOperator):
-        #     self.task = context["ti"].task
+        self.task.render_template_fields(context, jinja_env)
 
         return original_task
 
@@ -538,11 +550,11 @@ def run(ti: RuntimeTaskInstance, log: Logger):
         context = ti.get_template_context()
         with set_current_context(context):
             jinja_env = ti.task.dag.get_template_env()
-            ti.task = ti.render_templates(context=context, jinja_env=jinja_env)
+            ti.render_templates(context=context, jinja_env=jinja_env)
             # TODO: Get things from _execute_task_with_callbacks
             #   - Pre Execute
             #   etc
-            result = _execute_task(context, ti.task)
+            result = _execute_task(context, ti)
 
         _push_xcom_if_needed(result, ti)
 
@@ -622,10 +634,11 @@ def run(ti: RuntimeTaskInstance, log: Logger):
             SUPERVISOR_COMMS.send_request(msg=msg, log=log)
 
 
-def _execute_task(context: Context, task: BaseOperator):
+def _execute_task(context: Context, ti: RuntimeTaskInstance):
     """Execute Task (optionally with a Timeout) and push Xcom results."""
     from airflow.exceptions import AirflowTaskTimeout
 
+    task = ti.task
     if task.execution_timeout:
         # TODO: handle timeout in case of deferral
         from airflow.utils.timeout import timeout

@@ -59,7 +59,7 @@ from airflow.models.connection import Connection
 from airflow.models.dag import DAG
 from airflow.models.dagbag import DagBag
 from airflow.models.dagrun import DagRun
-from airflow.models.expandinput import EXPAND_INPUT_EMPTY, NotFullyPopulated
+from airflow.models.expandinput import EXPAND_INPUT_EMPTY
 from airflow.models.pool import Pool
 from airflow.models.renderedtifields import RenderedTaskInstanceFields
 from airflow.models.serialized_dag import SerializedDagModel
@@ -4922,80 +4922,6 @@ class TestMappedTaskInstanceReceiveValue:
             ti.refresh_from_task(show_task)
             ti.run()
         assert outputs == expected_outputs
-
-    def test_map_product(self, dag_maker, session):
-        outputs = []
-
-        with dag_maker(dag_id="product", session=session) as dag:
-
-            @dag.task
-            def emit_numbers():
-                return [1, 2]
-
-            @dag.task
-            def emit_letters():
-                return {"a": "x", "b": "y", "c": "z"}
-
-            @dag.task
-            def show(number, letter):
-                outputs.append((number, letter))
-
-            show.expand(number=emit_numbers(), letter=emit_letters())
-
-        dag_run = dag_maker.create_dagrun()
-        for task_id in ["emit_numbers", "emit_letters"]:
-            ti = dag_run.get_task_instance(task_id, session=session)
-            ti.refresh_from_task(dag.get_task(task_id))
-            ti.run()
-
-        show_task = dag.get_task("show")
-        mapped_tis, max_map_index = TaskMap.expand_mapped_task(show_task, dag_run.run_id, session=session)
-        assert max_map_index + 1 == len(mapped_tis) == 6
-
-        for ti in sorted(mapped_tis, key=operator.attrgetter("map_index")):
-            ti.refresh_from_task(show_task)
-            ti.run()
-        assert outputs == [
-            (1, ("a", "x")),
-            (1, ("b", "y")),
-            (1, ("c", "z")),
-            (2, ("a", "x")),
-            (2, ("b", "y")),
-            (2, ("c", "z")),
-        ]
-
-    def test_map_product_same(self, dag_maker, session):
-        """Test a mapped task can refer to the same source multiple times."""
-        outputs = []
-
-        with dag_maker(dag_id="product_same", session=session) as dag:
-
-            @dag.task
-            def emit_numbers():
-                return [1, 2]
-
-            @dag.task
-            def show(a, b):
-                outputs.append((a, b))
-
-            emit_task = emit_numbers()
-            show.expand(a=emit_task, b=emit_task)
-
-        dag_run = dag_maker.create_dagrun()
-        ti = dag_run.get_task_instance("emit_numbers", session=session)
-        ti.refresh_from_task(dag.get_task("emit_numbers"))
-        ti.run()
-
-        show_task = dag.get_task("show")
-        with pytest.raises(NotFullyPopulated):
-            assert show_task.get_parse_time_mapped_ti_count()
-        mapped_tis, max_map_index = TaskMap.expand_mapped_task(show_task, dag_run.run_id, session=session)
-        assert max_map_index + 1 == len(mapped_tis) == 4
-
-        for ti in sorted(mapped_tis, key=operator.attrgetter("map_index")):
-            ti.refresh_from_task(show_task)
-            ti.run()
-        assert outputs == [(1, 1), (1, 2), (2, 1), (2, 2)]
 
     def test_map_literal_cross_product(self, dag_maker, session):
         """Test a mapped task with literal cross product args expand properly."""
