@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import os
 import tempfile
 from pathlib import Path
 from unittest import mock
@@ -106,6 +107,8 @@ CONN_DEFAULT = "git_default"
 CONN_HTTPS = "my_git_conn"
 CONN_HTTPS_PASSWORD = "my_git_conn_https_password"
 CONN_ONLY_PATH = "my_git_conn_only_path"
+CONN_ONLY_INLINE_KEY = "my_git_conn_only_inline_key"
+CONN_BOTH_PATH_INLINE = "my_git_conn_both_path_inline"
 CONN_NO_REPO_URL = "my_git_conn_no_repo_url"
 
 
@@ -142,6 +145,17 @@ class TestGitHook:
                 conn_id=CONN_ONLY_PATH,
                 host="path/to/repo",
                 conn_type="git",
+                extra={"key_file": "path/to/key"},
+            )
+        )
+        db.merge_conn(
+            Connection(
+                conn_id=CONN_ONLY_INLINE_KEY,
+                host="path/to/repo",
+                conn_type="git",
+                extra={
+                    "private_key": "inline_key",
+                },
             )
         )
 
@@ -176,6 +190,52 @@ class TestGitHook:
         assert hook.env == {
             "GIT_SSH_COMMAND": "ssh -i /files/pkey.pem -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
         }
+
+    def test_given_both_private_key_and_key_file(self):
+        db.merge_conn(
+            Connection(
+                conn_id=CONN_BOTH_PATH_INLINE,
+                host="path/to/repo",
+                conn_type="git",
+                extra={
+                    "key_file": "path/to/key",
+                    "private_key": "inline_key",
+                },
+            )
+        )
+
+        with pytest.raises(
+            AirflowException, match="Both 'key_file' and 'private_key' cannot be provided at the same time"
+        ):
+            GitHook(git_conn_id=CONN_BOTH_PATH_INLINE)
+
+    def test_key_file_git_hook_has_env(self):
+        hook = GitHook(git_conn_id=CONN_ONLY_PATH)
+
+        assert hasattr(hook, "env")
+        assert hook.env == {
+            "GIT_SSH_COMMAND": "ssh -i path/to/key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+        }
+
+    def test_private_key_lazy_env_var(self):
+        hook = GitHook(git_conn_id=CONN_ONLY_INLINE_KEY)
+        assert hook.env == {}
+
+        hook.set_git_env("dummy_inline_key")
+        assert hook.env == {
+            "GIT_SSH_COMMAND": "ssh -i dummy_inline_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+        }
+
+    def test_setup_inline_key(self):
+        hook = GitHook(git_conn_id=CONN_ONLY_INLINE_KEY)
+        assert hasattr(hook, "private_key")
+
+        hook.set_git_env("dummy_inline_key")
+
+        with hook.setup_inline_key() as tmp_keyfile:
+            assert os.path.exists(tmp_keyfile)
+
+        assert not os.path.exists(tmp_keyfile)
 
 
 class TestGitDagBundle:

@@ -17,8 +17,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+import tempfile
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
@@ -60,6 +62,7 @@ class GitHook(BaseHook):
                 "extra": json.dumps(
                     {
                         "key_file": "optional/path/to/keyfile",
+                        "private_key": "optional inline private key",
                     }
                 )
             },
@@ -70,14 +73,23 @@ class GitHook(BaseHook):
         connection = self.get_connection(git_conn_id)
         self.repo_url = connection.host
         self.auth_token = connection.password
+        self.private_key = connection.extra_dejson.get("private_key")
         self.key_file = connection.extra_dejson.get("key_file")
-        strict_host_key_checking = connection.extra_dejson.get("strict_host_key_checking", "no")
+        self.strict_host_key_checking = connection.extra_dejson.get("strict_host_key_checking", "no")
         self.env: dict[str, str] = {}
+
+        if self.key_file and self.private_key:
+            raise AirflowException("Both 'key_file' and 'private_key' cannot be provided at the same time")
         if self.key_file:
-            self.env["GIT_SSH_COMMAND"] = (
-                f"ssh -i {self.key_file} -o IdentitiesOnly=yes -o StrictHostKeyChecking={strict_host_key_checking}"
-            )
+            self.env["GIT_SSH_COMMAND"] = self._build_ssh_command(self.key_file)
         self._process_git_auth_url()
+
+    def _build_ssh_command(self, key_path: str) -> str:
+        return (
+            f"ssh -i {key_path} "
+            f"-o IdentitiesOnly=yes "
+            f"-o StrictHostKeyChecking={self.strict_host_key_checking}"
+        )
 
     def _process_git_auth_url(self):
         if not isinstance(self.repo_url, str):
@@ -86,6 +98,23 @@ class GitHook(BaseHook):
             self.repo_url = self.repo_url.replace("https://", f"https://{self.auth_token}@")
         elif not self.repo_url.startswith("git@") or not self.repo_url.startswith("https://"):
             self.repo_url = os.path.expanduser(self.repo_url)
+
+    def set_git_env(self, key: str) -> dict[str, str]:
+        if self.key_file:
+            return self.env
+        self.env["GIT_SSH_COMMAND"] = self._build_ssh_command(key)
+        return self.env
+
+    @contextlib.contextmanager
+    def setup_inline_key(self):
+        if self.private_key:
+            with tempfile.NamedTemporaryFile(mode="w", delete=True) as tmp_keyfile:
+                tmp_keyfile.write(self.private_key)
+                tmp_keyfile.flush()
+                os.chmod(tmp_keyfile.name, 0o600)
+                yield tmp_keyfile.name
+        else:
+            yield
 
 
 class GitDagBundle(BaseDagBundle, LoggingMixin):
@@ -126,8 +155,11 @@ class GitDagBundle(BaseDagBundle, LoggingMixin):
             self.log.error("Error creating GitHook: %s", e)
 
     def _initialize(self):
-        self._clone_bare_repo_if_required()
-        self._ensure_version_in_bare_repo()
+        with self.hook.setup_inline_key() as tmp_keyfile:
+            self.hook.env = self.hook.set_git_env(tmp_keyfile)
+            self._clone_bare_repo_if_required()
+            self._ensure_version_in_bare_repo()
+
         self._clone_repo_if_required()
         self.repo.git.checkout(self.tracking_ref)
         if self.version:
