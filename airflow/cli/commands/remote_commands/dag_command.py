@@ -320,6 +320,7 @@ def dag_list_dags(args, session=NEW_SESSION) -> None:
     cols = args.columns if args.columns else []
     invalid_cols = [c for c in cols if c not in dag_schema.fields]
     valid_cols = [c for c in cols if c in dag_schema.fields]
+
     if invalid_cols:
         from rich import print as rich_print
 
@@ -328,7 +329,10 @@ def dag_list_dags(args, session=NEW_SESSION) -> None:
             f"List of valid columns: {list(dag_schema.fields.keys())}",
             file=sys.stderr,
         )
-    dagbag = DagBag(process_subdir(args.subdir))
+
+    dagbag = DagBag(read_dags_from_db=True)
+    dagbag.collect_dags_from_db()
+
     if dagbag.import_errors:
         from rich import print as rich_print
 
