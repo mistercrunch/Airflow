@@ -171,15 +171,10 @@ labelPRBasedOnFilePath:
     - providers/github/**
 
   provider:google:
-    - providers/src/airflow/providers/google/**/*
-    - docs/apache-airflow-providers-google/**/*
-    - providers/tests/google/**/*
-    - providers/tests/system/google/**/*
+    - providers/google/**
 
   provider:grpc:
-    - providers/src/airflow/providers/grpc/**/*
-    - docs/apache-airflow-providers-grpc/**/*
-    - providers/tests/grpc/**/*
+    - providers/grpc/**
 
   provider:hashicorp:
     - providers/hashicorp/**
@@ -194,10 +189,7 @@ labelPRBasedOnFilePath:
     - providers/influxdb/**
 
   provider:jdbc:
-    - providers/src/airflow/providers/jdbc/**/*
-    - docs/apache-airflow-providers-jdbc/**/*
-    - providers/tests/jdbc/**/*
-    - providers/tests/system/jdbc/**/*
+    - providers/jdbc/**
 
   provider:jenkins:
     - providers/jenkins/**
@@ -209,15 +201,10 @@ labelPRBasedOnFilePath:
     - providers/tests/system/microsoft/azure/**/*
 
   provider:microsoft-mssql:
-    - providers/src/airflow/providers/microsoft/mssql/**/*
-    - docs/apache-airflow-providers-microsoft-mssql/**/*
-    - providers/tests/microsoft/mssql/**/*
-    - providers/tests/system/microsoft/mssql/**/*
+    - providers/microsoft/mssql/**
 
   provider:microsoft-psrp:
-    - providers/src/airflow/providers/microsoft/psrp/**/*
-    - docs/apache-airflow-providers-microsoft-psrp/**/*
-    - providers/tests/microsoft/psrp/**/*
+    - providers/microsoft/psrp/**
 
   provider:microsoft-winrm:
     - providers/src/airflow/providers/microsoft/winrm/**/*
@@ -280,10 +267,7 @@ labelPRBasedOnFilePath:
     - providers/redis/**
 
   provider:salesforce:
-    - providers/src/airflow/providers/salesforce/**/*
-    - docs/apache-airflow-providers-salesforce/**/*
-    - providers/tests/salesforce/**/*
-    - providers/tests/system/salesforce/**/*
+    - providers/salesforce/**
 
   provider:samba:
     - providers/samba/**
