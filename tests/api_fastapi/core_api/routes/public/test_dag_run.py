@@ -228,7 +228,6 @@ class TestGetDagRuns:
             ),
             "run_type": run.run_type,
             "state": run.state,
-            "external_trigger": run.external_trigger,
             "triggered_by": run.triggered_by.value,
             "conf": run.conf,
             "note": run.note,
@@ -275,7 +274,6 @@ class TestGetDagRuns:
             pytest.param("start_date", [DAG1_RUN1_ID, DAG1_RUN2_ID], id="order_by_start_date"),
             pytest.param("end_date", [DAG1_RUN1_ID, DAG1_RUN2_ID], id="order_by_end_date"),
             pytest.param("updated_at", [DAG1_RUN1_ID, DAG1_RUN2_ID], id="order_by_updated_at"),
-            pytest.param("external_trigger", [DAG1_RUN1_ID, DAG1_RUN2_ID], id="order_by_external_trigger"),
             pytest.param("conf", [DAG1_RUN1_ID, DAG1_RUN2_ID], id="order_by_conf"),
         ],
     )
@@ -543,7 +541,6 @@ class TestListDagRunsBatch:
             ),
             "run_type": run.run_type,
             "state": run.state,
-            "external_trigger": run.external_trigger,
             "triggered_by": run.triggered_by.value,
             "conf": run.conf,
             "note": run.note,
@@ -609,7 +606,6 @@ class TestListDagRunsBatch:
             pytest.param("start_date", DAG_RUNS_LIST, id="order_by_start_date"),
             pytest.param("end_date", DAG_RUNS_LIST, id="order_by_end_date"),
             pytest.param("updated_at", DAG_RUNS_LIST, id="order_by_updated_at"),
-            pytest.param("external_trigger", DAG_RUNS_LIST, id="order_by_external_trigger"),
             pytest.param("conf", DAG_RUNS_LIST, id="order_by_conf"),
         ],
     )
@@ -1216,7 +1212,6 @@ class TestTriggerDagRun:
             "end_date": None,
             "logical_date": expected_logical_date,
             "run_after": fixed_now.replace("+00:00", "Z"),
-            "external_trigger": True,
             "start_date": None,
             "state": "queued",
             "data_interval_end": expected_data_interval_end,
@@ -1364,25 +1359,28 @@ class TestTriggerDagRun:
             json={"dag_run_id": RUN_ID_2, "note": note, "logical_date": now},
         )
 
-        assert response_1.status_code == 200
-        assert response_1.json() == {
-            "dag_run_id": RUN_ID_1,
-            "dag_id": DAG1_ID,
-            "logical_date": now,
-            "queued_at": now,
-            "start_date": None,
-            "end_date": None,
-            "run_after": now,
-            "data_interval_start": now,
-            "data_interval_end": now,
-            "last_scheduling_decision": None,
-            "run_type": "manual",
-            "state": "queued",
-            "external_trigger": True,
-            "triggered_by": "rest_api",
-            "conf": {},
-            "note": note,
-        }
+        assert response_1.status_code == response_2.status_code == 200
+        body1 = response_1.json()
+        body2 = response_2.json()
+
+        for each_run_id, each_body in [(RUN_ID_1, body1), (RUN_ID_2, body2)]:
+            assert each_body == {
+                "dag_run_id": each_run_id,
+                "dag_id": DAG1_ID,
+                "logical_date": now,
+                "queued_at": now,
+                "start_date": None,
+                "end_date": None,
+                "run_after": now,
+                "data_interval_start": now,
+                "data_interval_end": now,
+                "last_scheduling_decision": None,
+                "run_type": "manual",
+                "state": "queued",
+                "triggered_by": "rest_api",
+                "conf": {},
+                "note": note,
+            }
 
         assert response_2.status_code == 409
 
