@@ -48,6 +48,7 @@ from airflow.api_fastapi.core_api.datamodels.ui.dags import (
     DAGWithLatestDagRunsResponse,
 )
 from airflow.models import DagModel, DagRun
+from airflow.models.taskinstance import TaskInstance
 
 dags_router = AirflowRouter(prefix="/dags", tags=["Dags"])
 
@@ -98,6 +99,9 @@ def recent_dag_runs(
                 DagRun.dag_id == DagModel.dag_id,
                 DagRun.logical_date == recent_runs_subquery.c.logical_date,
             ),
+        )
+        .join(
+            TaskInstance.task_id, TaskInstance.dag_id == DagRun.dag_id, TaskInstance.run_id == DagRun.run_id
         )
         .where(recent_runs_subquery.c.rank <= dag_runs_limit)
         .group_by(

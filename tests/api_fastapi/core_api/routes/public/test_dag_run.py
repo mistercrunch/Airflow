@@ -23,10 +23,12 @@ from unittest import mock
 import pytest
 import time_machine
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 
 from airflow.listeners.listener import get_listener_manager
 from airflow.models import DagModel, DagRun
 from airflow.models.asset import AssetEvent, AssetModel
+from airflow.models.dag_version import DagVersion
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.sdk.definitions.asset import Asset
 from airflow.sdk.definitions.param import Param
@@ -75,6 +77,13 @@ DAG2_PARAM = {"validated_number": Param(1, minimum=1, maximum=10)}
 DAG_RUNS_LIST = [DAG1_RUN1_ID, DAG1_RUN2_ID, DAG2_RUN1_ID, DAG2_RUN2_ID]
 
 
+def get_dag_versions_list(dag_id: str) -> list[str]:
+    dag_version = DagVersion.get_latest_version(dag_id)
+    if dag_version is None:
+        return []
+    return [str(dag_version.id)]
+
+
 @pytest.fixture(autouse=True)
 @provide_session
 def setup(request, dag_maker, session=None):
@@ -85,11 +94,7 @@ def setup(request, dag_maker, session=None):
     if "no_setup" in request.keywords:
         return
 
-    with dag_maker(
-        DAG1_ID,
-        schedule=None,
-        start_date=START_DATE1,
-    ):
+    with dag_maker(DAG1_ID, schedule=None, start_date=START_DATE1, serialized=True):
         task1 = EmptyOperator(task_id="task_1")
         task2 = EmptyOperator(task_id="task_2")
 
@@ -99,6 +104,7 @@ def setup(request, dag_maker, session=None):
         run_type=DAG1_RUN1_RUN_TYPE,
         triggered_by=DAG1_RUN1_TRIGGERED_BY,
         logical_date=LOGICAL_DATE1,
+        dag_version=DagVersion.get_latest_version(DAG1_ID),
     )
 
     dag_run1.note = (DAG1_RUN1_NOTE, 1)
@@ -116,6 +122,7 @@ def setup(request, dag_maker, session=None):
         run_type=DAG1_RUN2_RUN_TYPE,
         triggered_by=DAG1_RUN2_TRIGGERED_BY,
         logical_date=LOGICAL_DATE2,
+        dag_version=DagVersion.get_latest_version(DAG1_ID),
     )
 
     ti1 = dag_run2.get_task_instance(task_id=task1.task_id)
@@ -126,7 +133,7 @@ def setup(request, dag_maker, session=None):
     ti2.task = task2
     ti2.state = State.FAILED
 
-    with dag_maker(DAG2_ID, schedule=None, start_date=START_DATE2, params=DAG2_PARAM):
+    with dag_maker(DAG2_ID, schedule=None, start_date=START_DATE2, params=DAG2_PARAM, serialized=True):
         EmptyOperator(task_id="task_2")
     dag_maker.create_dagrun(
         run_id=DAG2_RUN1_ID,
@@ -134,6 +141,7 @@ def setup(request, dag_maker, session=None):
         run_type=DAG2_RUN1_RUN_TYPE,
         triggered_by=DAG2_RUN1_TRIGGERED_BY,
         logical_date=LOGICAL_DATE3,
+        dag_version=DagVersion.get_latest_version(DAG2_ID),
     )
     dag_maker.create_dagrun(
         run_id=DAG2_RUN2_ID,
@@ -141,6 +149,7 @@ def setup(request, dag_maker, session=None):
         run_type=DAG2_RUN2_RUN_TYPE,
         triggered_by=DAG2_RUN2_TRIGGERED_BY,
         logical_date=LOGICAL_DATE4,
+        dag_version=DagVersion.get_latest_version(DAG2_ID),
     )
 
     dag_maker.sync_dagbag_to_db()
@@ -190,7 +199,10 @@ class TestGetDagRun:
             ),
         ],
     )
-    def test_get_dag_run(self, test_client, dag_id, run_id, state, run_type, triggered_by, dag_run_note):
+    @provide_session
+    def test_get_dag_run(
+        self, test_client, dag_id, run_id, state, run_type, triggered_by, dag_run_note, session=None
+    ):
         response = test_client.get(f"/public/dags/{dag_id}/dagRuns/{run_id}")
         assert response.status_code == 200
         body = response.json()
@@ -200,6 +212,7 @@ class TestGetDagRun:
         assert body["run_type"] == run_type
         assert body["triggered_by"] == triggered_by.value
         assert body["note"] == dag_run_note
+        assert body["dag_versions"] == get_dag_versions_list(dag_id)
 
     def test_get_dag_run_not_found(self, test_client):
         response = test_client.get(f"/public/dags/{DAG1_ID}/dagRuns/invalid")
@@ -214,6 +227,7 @@ class TestGetDagRuns:
         return {
             "dag_run_id": run.run_id,
             "dag_id": run.dag_id,
+            "dag_versions": get_dag_versions_list(run.dag_id),
             "logical_date": from_datetime_to_zulu_without_ms(run.logical_date),
             "queued_at": from_datetime_to_zulu(run.queued_at) if run.queued_at else None,
             "start_date": from_datetime_to_zulu_without_ms(run.start_date),
@@ -241,6 +255,7 @@ class TestGetDagRuns:
             run = (
                 session.query(DagRun)
                 .where(DagRun.dag_id == each["dag_id"], DagRun.run_id == each["dag_run_id"])
+                .options(joinedload(DagRun.dag_run_note))
                 .one()
             )
             expected = self.get_dag_run_dict(run)
@@ -502,6 +517,7 @@ class TestListDagRunsBatch:
         return {
             "dag_run_id": run.run_id,
             "dag_id": run.dag_id,
+            "dag_versions": get_dag_versions_list(run.dag_id),
             "logical_date": from_datetime_to_zulu_without_ms(run.logical_date),
             "queued_at": from_datetime_to_zulu_without_ms(run.queued_at) if run.queued_at else None,
             "start_date": from_datetime_to_zulu_without_ms(run.start_date),
@@ -527,7 +543,12 @@ class TestListDagRunsBatch:
         body = response.json()
         assert body["total_entries"] == 4
         for each in body["dag_runs"]:
-            run = session.query(DagRun).where(DagRun.run_id == each["dag_run_id"]).one()
+            run = (
+                session.query(DagRun)
+                .where(DagRun.run_id == each["dag_run_id"])
+                .options(joinedload(DagRun.dag_run_note))
+                .one()
+            )
             expected = self.get_dag_run_dict(run)
             assert each == expected
 
@@ -1174,6 +1195,7 @@ class TestTriggerDagRun:
             "conf": {},
             "dag_id": DAG1_ID,
             "dag_run_id": expected_dag_run_id,
+            "dag_versions": get_dag_versions_list(DAG1_ID),
             "end_date": None,
             "logical_date": fixed_now.replace("+00:00", "Z"),
             "external_trigger": True,
@@ -1341,6 +1363,7 @@ class TestTriggerDagRun:
             assert each_body == {
                 "dag_run_id": each_run_id,
                 "dag_id": DAG1_ID,
+                "dag_versions": get_dag_versions_list(DAG1_ID),
                 "logical_date": now,
                 "queued_at": now,
                 "start_date": None,
