@@ -18,12 +18,14 @@
 from __future__ import annotations
 
 from typing import Annotated, Literal, cast
+from uuid import UUID
 
 import pendulum
 from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 
 from airflow.api.common.mark_tasks import (
     set_dag_run_state_to_failed,
@@ -63,13 +65,83 @@ from airflow.api_fastapi.core_api.openapi.exceptions import create_openapi_http_
 from airflow.api_fastapi.logging.decorators import action_logging
 from airflow.exceptions import ParamValidationError
 from airflow.listeners.listener import get_listener_manager
-from airflow.models import DAG, DagModel, DagRun
+from airflow.models import DAG, DagModel, DagRun, TaskInstance
 from airflow.models.dag_version import DagVersion
+from airflow.models.taskinstancehistory import TaskInstanceHistory
 from airflow.timetables.base import DataInterval
 from airflow.utils.state import DagRunState
 from airflow.utils.types import DagRunTriggeredByType, DagRunType
 
 dag_run_router = AirflowRouter(tags=["DagRun"], prefix="/dags/{dag_id}/dagRuns")
+
+
+def get_dag_run_with_task_ids(dag_id: str, run_id: str, session: SessionDep) -> DagRun:
+    """Get the DagRun with the given task_ids."""
+    return session.scalar(
+        select(DagRun)
+        .options(joinedload(DagRun.task_instances).load_only("task_id"))
+        .filter_by(dag_id=dag_id, run_id=run_id)
+    )
+
+
+def get_dag_version_ids_among_dag_run(dag_id: str, dag_run_id: str, task_ids: list[str], session: SessionDep):
+    """Get the DagVersions from the TaskInstances and TaskInstanceHistories of the DagRun."""
+    task_instance_dag_version_ids = select(TaskInstance.dag_version_id).where(
+        TaskInstance.dag_id == dag_id, TaskInstance.run_id == dag_run_id, TaskInstance.task_id.in_(task_ids)
+    )
+    task_instance_history_dag_version_ids = select(TaskInstanceHistory.dag_version_id).where(
+        TaskInstanceHistory.dag_id == dag_id,
+        TaskInstanceHistory.run_id == dag_run_id,
+        TaskInstanceHistory.task_id.in_(task_ids),
+    )
+    return (
+        session.execute(
+            task_instance_dag_version_ids.distinct().union(task_instance_history_dag_version_ids.distinct())
+        )
+        .scalars()
+        .all()
+    )
+
+
+def bind_dag_versions_to_dag_run(dag_run: DagRun, session: SessionDep) -> DagRun:
+    """Bind the dag_versions to the dag_run."""
+    task_ids = [task_instance.task_id for task_instance in dag_run.task_instances]
+    dag_version_ids = get_dag_version_ids_among_dag_run(dag_run.dag_id, dag_run.run_id, task_ids, session)
+    dag_run.dag_versions = dag_version_ids
+    return dag_run
+
+
+def bind_dag_versions_to_dag_runs(dag_id: str, dag_runs: list[DagRun], session: SessionDep) -> list[DagRun]:
+    """Bind the dag_versions to each dag_run in the list."""
+    run_ids = []
+    task_ids = []
+    for dag_run in dag_runs:
+        run_ids.append(dag_run.run_id)
+        task_ids.extend([task_instance.task_id for task_instance in dag_run.task_instances])
+    dag_versions_by_run_id: dict[str, list[UUID]] = {}
+    # query dag_version_ids from task_instances and task_instance_histories for all dag_runs in one query
+    task_instance_dag_version_ids = select(TaskInstance.dag_version_id, TaskInstance.run_id).where(
+        TaskInstance.dag_id == dag_id, TaskInstance.run_id.in_(run_ids), TaskInstance.task_id.in_(task_ids)
+    )
+    task_instance_history_dag_version_ids = select(
+        TaskInstanceHistory.dag_version_id, TaskInstanceHistory.run_id
+    ).where(
+        TaskInstanceHistory.dag_id == dag_id,
+        TaskInstanceHistory.run_id.in_(run_ids),
+        TaskInstanceHistory.task_id.in_(task_ids),
+    )
+    dag_versions_ids_tuples = session.execute(
+        task_instance_dag_version_ids.distinct().union(task_instance_history_dag_version_ids.distinct())
+    ).all()
+    # aggregate the dag_version_ids by run_id
+    for dag_version_id, run_id in dag_versions_ids_tuples:
+        if run_id not in dag_versions_by_run_id:
+            dag_versions_by_run_id[run_id] = []
+        dag_versions_by_run_id[run_id].append(dag_version_id)
+    # bind the dag_versions to each dag_run
+    for dag_run in dag_runs:
+        dag_run.dag_versions = dag_versions_by_run_id.get(run_id, [])
+    return dag_runs
 
 
 @dag_run_router.get(
@@ -81,13 +153,13 @@ dag_run_router = AirflowRouter(tags=["DagRun"], prefix="/dags/{dag_id}/dagRuns")
     ),
 )
 def get_dag_run(dag_id: str, dag_run_id: str, session: SessionDep) -> DAGRunResponse:
-    dag_run = session.scalar(select(DagRun).filter_by(dag_id=dag_id, run_id=dag_run_id))
+    dag_run = get_dag_run_with_task_ids(dag_id, dag_run_id, session)
     if dag_run is None:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
             f"The DagRun with dag_id: `{dag_id}` and run_id: `{dag_run_id}` was not found",
         )
-
+    dag_run = bind_dag_versions_to_dag_run(dag_run, session)
     return dag_run
 
 
@@ -132,7 +204,7 @@ def patch_dag_run(
     update_mask: list[str] | None = Query(None),
 ) -> DAGRunResponse:
     """Modify a DAG Run."""
-    dag_run = session.scalar(select(DagRun).filter_by(dag_id=dag_id, run_id=dag_run_id))
+    dag_run = get_dag_run_with_task_ids(dag_id, dag_run_id, session)
     if dag_run is None:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
@@ -179,6 +251,7 @@ def patch_dag_run(
                 dag_run.dag_run_note.content = attr_value
 
     dag_run = session.get(DagRun, dag_run.id)
+    dag_run = bind_dag_versions_to_dag_run(dag_run, session)
 
     return dag_run
 
@@ -256,7 +329,12 @@ def clear_dag_run(
             only_failed=body.only_failed,
             session=session,
         )
-        dag_run_cleared = session.scalar(select(DagRun).where(DagRun.id == dag_run.id))
+        dag_run_cleared = session.scalar(
+            select(DagRun)
+            .options(joinedload(DagRun.task_instances).load_only("task_id"))
+            .where(DagRun.id == dag_run.id)
+        )
+        dag_run_cleared = bind_dag_versions_to_dag_run(dag_run_cleared, session)
         return dag_run_cleared
 
 
@@ -308,6 +386,10 @@ def get_dag_runs(
 
         query = query.filter(DagRun.dag_id == dag_id)
 
+    query = query.join(
+        TaskInstance.task_id, TaskInstance.dag_id == DagRun.dag_id, TaskInstance.run_id == DagRun.run_id
+    ).group_by(DagRun)
+
     dag_run_select, total_entries = paginated_select(
         statement=query,
         filters=[logical_date, start_date_range, end_date_range, update_at_range, state],
@@ -317,6 +399,9 @@ def get_dag_runs(
         session=session,
     )
     dag_runs = session.scalars(dag_run_select)
+    # since we need to loop through the dag_runs multiple times and set the dag_versions for each dag_run, we need to convert the query result to a list
+    dag_runs = list(dag_runs)
+    dag_runs = bind_dag_versions_to_dag_runs(dag_id, dag_runs, session)
     return DAGRunCollectionResponse(
         dag_runs=dag_runs,
         total_entries=total_entries,
@@ -373,6 +458,7 @@ def trigger_dag_run(
                 data_interval=data_interval,
             )
 
+        dag_version = DagVersion.get_latest_version(dag.dag_id, session=session)
         dag_run = dag.create_dagrun(
             run_id=run_id,
             logical_date=logical_date,
@@ -382,10 +468,11 @@ def trigger_dag_run(
             run_type=DagRunType.MANUAL,
             triggered_by=DagRunTriggeredByType.REST_API,
             external_trigger=True,
-            dag_version=DagVersion.get_latest_version(dag.dag_id),
+            dag_version=dag_version,
             state=DagRunState.QUEUED,
             session=session,
         )
+        dag_run.dag_versions = [dag_version.id if dag_version else None]
         dag_run_note = body.note
         if dag_run_note:
             current_user_id = None  # refer to https://github.com/apache/airflow/issues/43534
@@ -437,7 +524,13 @@ def get_list_dag_runs_batch(
         {"dag_run_id": "run_id"},
     ).set_value(body.order_by)
 
-    base_query = select(DagRun)
+    base_query = (
+        select(DagRun)
+        .join(
+            TaskInstance.task_id, TaskInstance.dag_id == DagRun.dag_id, TaskInstance.run_id == DagRun.run_id
+        )
+        .group_by(DagRun)
+    )
     dag_runs_select, total_entries = paginated_select(
         statement=base_query,
         filters=[dag_ids, logical_date, start_date, end_date, state],
@@ -448,6 +541,8 @@ def get_list_dag_runs_batch(
     )
 
     dag_runs = session.scalars(dag_runs_select)
+    dag_runs = list(dag_runs)
+    dag_runs = bind_dag_versions_to_dag_runs(dag_id, dag_runs, session)
 
     return DAGRunCollectionResponse(
         dag_runs=dag_runs,

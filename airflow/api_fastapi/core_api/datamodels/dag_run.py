@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
+from uuid import UUID
 
 from pydantic import AwareDatetime, Field, NonNegativeInt, computed_field, model_validator
 
@@ -69,6 +70,7 @@ class DAGRunResponse(BaseModel):
     triggered_by: DagRunTriggeredByType
     conf: dict
     note: str | None
+    dag_versions: list[UUID]
 
 
 class DAGRunCollectionResponse(BaseModel):

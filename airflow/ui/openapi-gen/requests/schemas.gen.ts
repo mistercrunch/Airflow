@@ -2279,6 +2279,14 @@ export const $DAGRunResponse = {
       ],
       title: "Note",
     },
+    dag_versions: {
+      items: {
+        type: "string",
+        format: "uuid",
+      },
+      type: "array",
+      title: "Dag Versions",
+    },
   },
   type: "object",
   required: [
@@ -2297,6 +2305,7 @@ export const $DAGRunResponse = {
     "triggered_by",
     "conf",
     "note",
+    "dag_versions",
   ],
   title: "DAGRunResponse",
   description: "DAG Run serializer for responses.",

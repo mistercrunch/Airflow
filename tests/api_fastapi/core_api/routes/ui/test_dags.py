@@ -22,6 +22,7 @@ import pendulum
 import pytest
 
 from airflow.models import DagRun
+from airflow.models.dag_version import DagVersion
 from airflow.utils.session import provide_session
 from airflow.utils.state import DagRunState
 from airflow.utils.types import DagRunTriggeredByType, DagRunType
@@ -55,6 +56,7 @@ class TestRecentDagRuns(TestPublicDagEndpoint):
                     logical_date=start_date,
                     state=(DagRunState.FAILED if i % 2 == 0 else DagRunState.SUCCESS),
                     triggered_by=DagRunTriggeredByType.TEST,
+                    dag_version=DagVersion.get_latest_version(dag_id),
                 )
                 dag_run.end_date = dag_run.start_date + pendulum.duration(hours=1)
                 session.add(dag_run)
@@ -86,12 +88,7 @@ class TestRecentDagRuns(TestPublicDagEndpoint):
         response = test_client.get("/ui/dags/recent_dag_runs", params=query_params)
         assert response.status_code == 200
         body = response.json()
-        required_dag_run_key = [
-            "dag_run_id",
-            "dag_id",
-            "state",
-            "logical_date",
-        ]
+        required_dag_run_key = ["dag_run_id", "dag_id", "state", "logical_date", "dag_versions"]
         for recent_dag_runs in body["dags"]:
             dag_runs = recent_dag_runs["latest_dag_runs"]
             # check date ordering
