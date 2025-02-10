@@ -116,25 +116,26 @@ class S3DagBundle(BaseDagBundle, LoggingMixin):
 
     def _download_s3_object_if_changed(self, s3_bucket, s3_object, local_target_path: Path):
         should_download = False
+        download_msg = ""
         if not local_target_path.exists():
             should_download = True
-            self.log.debug(f"Local file {local_target_path} does not exist. Downloading.")
+            download_msg = f"Local file {local_target_path} does not exist."
         else:
             local_stats = local_target_path.stat()
 
             if s3_object.size != local_stats.st_size:
                 should_download = True
-                self.log.debug(f"S3 object size ({s3_object.size}) and local file size ({local_stats.st_size}) differ. Downloading.")
+                download_msg = f"S3 object size ({s3_object.size}) and local file size ({local_stats.st_size}) differ."
 
             s3_last_modified = s3_object.last_modified
             local_last_modified = datetime.fromtimestamp(local_stats.st_mtime, tz=timezone.utc)
             if s3_last_modified.replace(microsecond=0) != local_last_modified.replace(microsecond=0):
                 should_download = True
-                self.log.debug(f"S3 object last modified ({s3_last_modified}) and local file last modified ({local_last_modified}) differ. Downloading.")
+                download_msg = f"S3 object last modified ({s3_last_modified}) and local file last modified ({local_last_modified}) differ."
 
         if should_download:
             s3_bucket.download_file(s3_object.key, local_target_path)
-            self.log.debug(f"Downloaded {s3_object.key} to {local_target_path.as_posix()}")
+            self.log.debug(f"{download_msg} Downloaded {s3_object.key} to {local_target_path.as_posix()}")
         else:
             self.log.debug(
                 f"Local file {local_target_path.as_posix()} is up-to-date with S3 object {s3_object.key}. Skipping download."

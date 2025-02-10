@@ -205,19 +205,29 @@ class TestS3DagBundle:
             level="DEBUG",
             regex=rf"Downloaded.*{S3_BUCKET_PREFIX}.*dag_03.py.*/s3/{bundle.name}/dag_03.py",
         )
+        assert bundle.bare_repo_path.joinpath("dag_03.py").read_text() == "test data"
         bundle.bare_repo_path.joinpath("dag_should_be_deleted.py").write_text("test dag")
         bundle.bare_repo_path.joinpath("dag_should_be_deleted_folder").mkdir(exist_ok=True)
+        s3_client.put_object(
+            Bucket=s3_bucket.name, Key=S3_BUCKET_PREFIX + "/dag_03.py", Body="test data-changed".encode("utf-8")
+        )
         bundle.refresh()
         assert caplog.text.count("Downloading DAGs from s3") == 4
         self.assert_log_matches_regex(
             caplog=caplog,
             level="DEBUG",
-            regex=rf"Deleted stale empty directory.*dag_should_be_deleted_folder",
+            regex=rf"S3 object size.*and local file size.*differ.*Downloaded.*dag_03.py.*",
+        )
+        assert bundle.bare_repo_path.joinpath("dag_03.py").read_text() == "test data-changed"
+        self.assert_log_matches_regex(
+            caplog=caplog,
+            level="DEBUG",
+            regex=rf"Deleted stale empty directory.*dag_should_be_deleted_folder.*",
         )
         self.assert_log_matches_regex(
             caplog=caplog,
             level="DEBUG",
-            regex=rf"Deleted stale local file.*dag_should_be_deleted.py",
+            regex=rf"Deleted stale local file.*dag_should_be_deleted.py.*",
         )
 
     def assert_log_matches_regex(self, caplog, level, regex):
@@ -229,4 +239,4 @@ class TestS3DagBundle:
                 break  # Stop searching once a match is found
         assert (
             matched
-        ), f"No log message at level {level} matching regex '{regex}' found. Logged messages:\n{caplog.text}"
+        ), f"No log message at level {level} matching regex '{regex}' found."
