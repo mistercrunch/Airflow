@@ -37,24 +37,35 @@ AWS_CONN_ID_DEFAULT = "aws_default"
 S3_BUCKET_NAME = "my-airflow-dags-bucket"
 S3_BUCKET_PREFIX = "project1/dags"
 
+
 @pytest.fixture
 def mocked_s3_resource():
     with mock_aws():
         yield boto3.resource("s3")
+
 
 @pytest.fixture
 def s3_client():
     with mock_aws():
         yield boto3.client("s3")
 
+
 @pytest.fixture
 def s3_bucket(mocked_s3_resource, s3_client):
     bucket = mocked_s3_resource.create_bucket(Bucket=S3_BUCKET_NAME)
 
-    s3_client.put_object(Bucket=bucket.name, Key=S3_BUCKET_PREFIX + "/dag_01.py", Body="test data".encode('utf-8'))
-    s3_client.put_object(Bucket=bucket.name, Key=S3_BUCKET_PREFIX + "/dag_02.py", Body="test data".encode('utf-8'))
-    s3_client.put_object(Bucket=bucket.name, Key=S3_BUCKET_PREFIX + "/subproject1/dag_a.py", Body="test data".encode('utf-8'))
-    s3_client.put_object(Bucket=bucket.name, Key=S3_BUCKET_PREFIX + "/subproject1/dag_b.py", Body="test data".encode('utf-8'))
+    s3_client.put_object(
+        Bucket=bucket.name, Key=S3_BUCKET_PREFIX + "/dag_01.py", Body="test data".encode("utf-8")
+    )
+    s3_client.put_object(
+        Bucket=bucket.name, Key=S3_BUCKET_PREFIX + "/dag_02.py", Body="test data".encode("utf-8")
+    )
+    s3_client.put_object(
+        Bucket=bucket.name, Key=S3_BUCKET_PREFIX + "/subproject1/dag_a.py", Body="test data".encode("utf-8")
+    )
+    s3_client.put_object(
+        Bucket=bucket.name, Key=S3_BUCKET_PREFIX + "/subproject1/dag_b.py", Body="test data".encode("utf-8")
+    )
 
     return bucket
 
@@ -93,8 +104,9 @@ class TestS3DagBundle:
         )
 
     def test_view_url_generates_presigned_url(self):
-        bundle = S3DagBundle(name="test", aws_conn_id=AWS_CONN_ID_DEFAULT, prefix="project1/dags",
-                             bucket_name=S3_BUCKET_NAME)
+        bundle = S3DagBundle(
+            name="test", aws_conn_id=AWS_CONN_ID_DEFAULT, prefix="project1/dags", bucket_name=S3_BUCKET_NAME
+        )
         url: str = bundle.view_url("test_version")
         assert url.startswith("https://my-airflow-dags-bucket.s3.amazonaws.com/project1/dags")
         assert "AWSAccessKeyId=" in url
@@ -102,8 +114,9 @@ class TestS3DagBundle:
         assert "Expires=" in url
 
     def test_supports_versioning(self):
-        bundle = S3DagBundle(name="test", aws_conn_id=AWS_CONN_ID_DEFAULT, prefix="project1/dags",
-                             bucket_name=S3_BUCKET_NAME)
+        bundle = S3DagBundle(
+            name="test", aws_conn_id=AWS_CONN_ID_DEFAULT, prefix="project1/dags", bucket_name=S3_BUCKET_NAME
+        )
         assert S3DagBundle.supports_versioning is False
 
         # set version, it's not supported
@@ -115,35 +128,45 @@ class TestS3DagBundle:
             bundle.view_url("test_version")
 
     def test_correct_bundle_path_used(self):
-        bundle = S3DagBundle(name="test", aws_conn_id=AWS_CONN_ID_DEFAULT, prefix="project1_dags",
-                             bucket_name="aiflow_dags")
+        bundle = S3DagBundle(
+            name="test", aws_conn_id=AWS_CONN_ID_DEFAULT, prefix="project1_dags", bucket_name="aiflow_dags"
+        )
         assert str(bundle.path) == str(bundle._dag_bundle_root_storage_path) + "/s3/test"
 
     def test_s3_bucket_and_prefix_validated(self, s3_bucket):
         hook = S3Hook(aws_conn_id=AWS_CONN_ID_DEFAULT)
         assert hook.check_for_bucket(s3_bucket.name) is True
 
-        bundle = S3DagBundle(name="test", aws_conn_id=AWS_CONN_ID_WITH_REGION, prefix="project1_dags",
-                             bucket_name="non-existing-bucket")
-        with pytest.raises(AirflowException, match="Given.*bucket_name.*does not exists"):
+        bundle = S3DagBundle(
+            name="test",
+            aws_conn_id=AWS_CONN_ID_WITH_REGION,
+            prefix="project1_dags",
+            bucket_name="non-existing-bucket",
+        )
+        with pytest.raises(AirflowException, match="S3 bucket.*non-existing-bucket.*does not exist.*"):
             bundle.initialize()
 
-        bundle = S3DagBundle(name="test", aws_conn_id=AWS_CONN_ID_WITH_REGION, prefix="non-existing-prefix",
-                             bucket_name=S3_BUCKET_NAME)
-        with pytest.raises(AirflowException, match="Given.*prefix.*does not exists"):
+        bundle = S3DagBundle(
+            name="test",
+            aws_conn_id=AWS_CONN_ID_WITH_REGION,
+            prefix="non-existing-prefix",
+            bucket_name=S3_BUCKET_NAME,
+        )
+        with pytest.raises(AirflowException, match="S3 prefix.*non-existing-prefix.*does not exist.*"):
             bundle.initialize()
 
-        bundle = S3DagBundle(name="test", aws_conn_id=AWS_CONN_ID_WITH_REGION, prefix="project1_dags",
-                             bucket_name=S3_BUCKET_NAME)
-        assert bundle.hook.region_name == AWS_CONN_ID_REGION
-
+        bundle = S3DagBundle(
+            name="test",
+            aws_conn_id=AWS_CONN_ID_WITH_REGION,
+            prefix="project1_dags",
+            bucket_name=S3_BUCKET_NAME,
+        )
+        assert bundle.s3_hook.region_name == AWS_CONN_ID_REGION
 
     def _upload_fixtures(self, bucket: str, fixtures_dir: str) -> None:
         client = boto3.client("s3")
         fixtures_paths = [
-            os.path.join(path,  filename)
-            for path, _, files in os.walk(fixtures_dir)
-            for filename in files
+            os.path.join(path, filename) for path, _, files in os.walk(fixtures_dir) for filename in files
         ]
         for path in fixtures_paths:
             key = os.path.relpath(path, fixtures_dir)
@@ -151,20 +174,39 @@ class TestS3DagBundle:
 
     def test_refresh(self, s3_bucket, s3_client, caplog):
         caplog.set_level(logging.DEBUG)  # Set the level to DEBUG for this test
-        bundle = S3DagBundle(name="test", aws_conn_id=AWS_CONN_ID_WITH_REGION, prefix=S3_BUCKET_PREFIX,
-                             bucket_name=S3_BUCKET_NAME)
+        bundle = S3DagBundle(
+            name="test",
+            aws_conn_id=AWS_CONN_ID_WITH_REGION,
+            prefix=S3_BUCKET_PREFIX,
+            bucket_name=S3_BUCKET_NAME,
+        )
 
         bundle.initialize()
         # dags are downloaded once by initialize and one with refresh called inside initialize
-        assert caplog.text.count("Downloading dags from s3") == 2
-        self.assert_log_matches_regex(caplog=caplog, level="DEBUG", regex=rf"Downloaded.*{S3_BUCKET_PREFIX}.*subproject1/dag_a.py.*/s3/{bundle.name}/subproject1/dag_a.py")
+        assert caplog.text.count("Downloading DAGs from s3") == 2
+        self.assert_log_matches_regex(
+            caplog=caplog,
+            level="DEBUG",
+            regex=rf"Downloaded.*{S3_BUCKET_PREFIX}.*subproject1/dag_a.py.*{bundle.bare_repo_path.as_posix()}.*subproject1/dag_a.py.*",
+            # Downloaded project1/dags/subproject1/dag_a.py to /private/var/folders/3l/n5dbz15s68592fk76c31hth8ffmnng/T/pytest-of-simseki/pytest-42/test_refresh0/s3/test/subproject1/dag_a.py
+            # Downloaded.*project1/dags.*subproject1/dag_a.py.*/private/var/folders/3l/n5dbz15s68592fk76c31hth8ffmnng/T/pytest-of-simseki/pytest-42/test_refresh0/s3/test.*subproject1/dag_a.py.*' found. Logged messages:
+        )
 
-        s3_client.put_object(Bucket=s3_bucket.name, Key=S3_BUCKET_PREFIX + "/dag_03.py", Body="test data".encode('utf-8'))
+        s3_client.put_object(
+            Bucket=s3_bucket.name, Key=S3_BUCKET_PREFIX + "/dag_03.py", Body="test data".encode("utf-8")
+        )
         bundle.refresh()
-        assert caplog.text.count("Downloading dags from s3") == 3
-        self.assert_log_matches_regex(caplog=caplog, level="DEBUG", regex=rf"Dag file not changed skipping download.*{S3_BUCKET_PREFIX}.*subproject1/dag_a.py.*/s3/{bundle.name}/subproject1/dag_a.py")
-        self.assert_log_matches_regex(caplog=caplog, level="DEBUG", regex=rf"Downloaded.*{S3_BUCKET_PREFIX}.*dag_03.py.*/s3/{bundle.name}/dag_03.py")
-
+        assert caplog.text.count("Downloading DAGs from s3") == 3
+        self.assert_log_matches_regex(
+            caplog=caplog,
+            level="DEBUG",
+            regex=rf"Local file.*/s3/{bundle.name}/subproject1/dag_a.py.*is up-to-date with S3 object.*{S3_BUCKET_PREFIX}.*subproject1/dag_a.py.*",
+        )
+        self.assert_log_matches_regex(
+            caplog=caplog,
+            level="DEBUG",
+            regex=rf"Downloaded.*{S3_BUCKET_PREFIX}.*dag_03.py.*/s3/{bundle.name}/dag_03.py",
+        )
 
     def assert_log_matches_regex(self, caplog, level, regex):
         """Helper function to assert if a log message matches a regex."""
@@ -173,4 +215,6 @@ class TestS3DagBundle:
             if record.levelname == level and re.search(regex, record.message):
                 matched = True
                 break  # Stop searching once a match is found
-        assert matched, f"No log message at level {level} matching regex '{regex}' found. Logged messages:\n{caplog.text}"
+        assert (
+            matched
+        ), f"No log message at level {level} matching regex '{regex}' found. Logged messages:\n{caplog.text}"
