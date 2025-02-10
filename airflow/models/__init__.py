@@ -60,6 +60,7 @@ def import_all_models():
     import airflow.models.dag_version
     import airflow.models.dagbundle
     import airflow.models.dagwarning
+    import airflow.models.deadline
     import airflow.models.errors
     import airflow.models.serialized_dag
     import airflow.models.taskinstancehistory
@@ -98,7 +99,7 @@ __lazy_imports = {
     "Log": "airflow.models.log",
     "MappedOperator": "airflow.models.mappedoperator",
     "Operator": "airflow.models.operator",
-    "Param": "airflow.models.param",
+    "Param": "airflow.sdk.definitions.param",
     "Pool": "airflow.models.pool",
     "RenderedTaskInstanceFields": "airflow.models.renderedtifields",
     "SkipMixin": "airflow.models.skipmixin",
@@ -123,10 +124,10 @@ if TYPE_CHECKING:
     from airflow.models.dagrun import DagRun
     from airflow.models.dagwarning import DagWarning
     from airflow.models.db_callback_request import DbCallbackRequest
+    from airflow.models.deadline import Deadline
     from airflow.models.log import Log
     from airflow.models.mappedoperator import MappedOperator
     from airflow.models.operator import Operator
-    from airflow.models.param import Param
     from airflow.models.pool import Pool
     from airflow.models.renderedtifields import RenderedTaskInstanceFields
     from airflow.models.skipmixin import SkipMixin
@@ -136,3 +137,4 @@ if TYPE_CHECKING:
     from airflow.models.trigger import Trigger
     from airflow.models.variable import Variable
     from airflow.models.xcom import XCom
+    from airflow.sdk.definitions.param import Param

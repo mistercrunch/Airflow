@@ -64,7 +64,7 @@ class DefaultHelpParser(argparse.ArgumentParser):
         super()._check_value(action, value)
 
     def error(self, message):
-        """Override error and use print_instead of print_usage."""
+        """Override error and use print_help instead of print_usage."""
         self.print_help()
         self.exit(2, f"\n{self.prog} command error: {message}, see help above.\n")
 
@@ -165,6 +165,15 @@ ARG_SUBDIR = Arg(
         "value you set for 'AIRFLOW_HOME' config you set in 'airflow.cfg' "
     ),
     default="[AIRFLOW_HOME]/dags" if BUILD_DOCS else settings.DAGS_FOLDER,
+)
+ARG_BUNDLE_NAME = Arg(
+    (
+        "-B",
+        "--bundle-name",
+    ),
+    help=("The name of the DAG bundle to use; may be provided more than once"),
+    default=None,
+    action="append",
 )
 ARG_START_DATE = Arg(("-s", "--start-date"), help="Override start_date YYYY-MM-DD", type=parsedate)
 ARG_END_DATE = Arg(("-e", "--end-date"), help="Override end_date YYYY-MM-DD", type=parsedate)
@@ -588,14 +597,6 @@ ARG_MIGRATION_TIMEOUT = Arg(
     type=int,
     default=60,
 )
-ARG_DB_RESERIALIZE_DAGS = Arg(
-    ("--no-reserialize-dags",),
-    # Not intended for user, so dont show in help
-    help=argparse.SUPPRESS,
-    action="store_false",
-    default=True,
-    dest="reserialize_dags",
-)
 ARG_DB_VERSION__UPGRADE = Arg(
     ("-n", "--to-version"),
     help=(
@@ -857,6 +858,28 @@ ARG_OPTION = Arg(
     ("option",),
     help="The option name",
 )
+
+# lint
+ARG_LINT_CONFIG_SECTION = Arg(
+    ("--section",),
+    help="The section name(s) to lint in the airflow config.",
+    type=string_list_type,
+)
+ARG_LINT_CONFIG_OPTION = Arg(
+    ("--option",),
+    help="The option name(s) to lint in the airflow config.",
+    type=string_list_type,
+)
+ARG_LINT_CONFIG_IGNORE_SECTION = Arg(
+    ("--ignore-section",),
+    help="The section name(s) to ignore to lint in the airflow config.",
+    type=string_list_type,
+)
+ARG_LINT_CONFIG_IGNORE_OPTION = Arg(
+    ("--ignore-option",),
+    help="The option name(s) to ignore to lint in the airflow config.",
+    type=string_list_type,
+)
 ARG_OPTIONAL_SECTION = Arg(
     ("--section",),
     help="The section name",
@@ -1051,7 +1074,7 @@ DAGS_COMMANDS = (
         name="state",
         help="Get the status of a dag run",
         func=lazy_load_command("airflow.cli.commands.remote_commands.dag_command.dag_state"),
-        args=(ARG_DAG_ID, ARG_LOGICAL_DATE, ARG_SUBDIR, ARG_VERBOSE),
+        args=(ARG_DAG_ID, ARG_LOGICAL_DATE_OR_RUN_ID, ARG_SUBDIR, ARG_VERBOSE),
     ),
     ActionCommand(
         name="next-execution",
@@ -1072,7 +1095,7 @@ DAGS_COMMANDS = (
             "treating the `--dag-id` as a regex pattern."
         ),
         func=lazy_load_command("airflow.cli.commands.remote_commands.dag_command.dag_pause"),
-        args=(ARG_DAG_ID, ARG_SUBDIR, ARG_TREAT_DAG_ID_AS_REGEX, ARG_YES, ARG_OUTPUT, ARG_VERBOSE),
+        args=(ARG_DAG_ID, ARG_TREAT_DAG_ID_AS_REGEX, ARG_YES, ARG_OUTPUT, ARG_VERBOSE),
     ),
     ActionCommand(
         name="unpause",
@@ -1083,7 +1106,7 @@ DAGS_COMMANDS = (
             "treating the `--dag-id` as a regex pattern."
         ),
         func=lazy_load_command("airflow.cli.commands.remote_commands.dag_command.dag_unpause"),
-        args=(ARG_DAG_ID, ARG_SUBDIR, ARG_TREAT_DAG_ID_AS_REGEX, ARG_YES, ARG_OUTPUT, ARG_VERBOSE),
+        args=(ARG_DAG_ID, ARG_TREAT_DAG_ID_AS_REGEX, ARG_YES, ARG_OUTPUT, ARG_VERBOSE),
     ),
     ActionCommand(
         name="trigger",
@@ -1212,7 +1235,7 @@ DAGS_COMMANDS = (
         ),
         func=lazy_load_command("airflow.cli.commands.remote_commands.dag_command.dag_reserialize"),
         args=(
-            ARG_SUBDIR,
+            ARG_BUNDLE_NAME,
             ARG_VERBOSE,
         ),
     ),
@@ -1452,7 +1475,6 @@ DB_COMMANDS = (
             ARG_DB_SQL_ONLY,
             ARG_DB_FROM_REVISION,
             ARG_DB_FROM_VERSION,
-            ARG_DB_RESERIALIZE_DAGS,
             ARG_VERBOSE,
         ),
     ),
@@ -1733,6 +1755,18 @@ CONFIG_COMMANDS = (
             ARG_VERBOSE,
         ),
     ),
+    ActionCommand(
+        name="lint",
+        help="lint options for the configuration changes while migrating from Airflow 2.x to Airflow 3.0",
+        func=lazy_load_command("airflow.cli.commands.remote_commands.config_command.lint_config"),
+        args=(
+            ARG_LINT_CONFIG_SECTION,
+            ARG_LINT_CONFIG_OPTION,
+            ARG_LINT_CONFIG_IGNORE_SECTION,
+            ARG_LINT_CONFIG_IGNORE_OPTION,
+            ARG_VERBOSE,
+        ),
+    ),
 )
 
 JOBS_COMMANDS = (
@@ -1869,7 +1903,6 @@ core_commands: list[CLICommand] = [
         help="Start a scheduler instance",
         func=lazy_load_command("airflow.cli.commands.local_commands.scheduler_command.scheduler"),
         args=(
-            ARG_SUBDIR,
             ARG_NUM_RUNS,
             ARG_PID,
             ARG_DAEMON,

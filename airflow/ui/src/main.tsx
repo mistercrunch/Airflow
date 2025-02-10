@@ -16,8 +16,8 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { ChakraProvider, defaultSystem } from "@chakra-ui/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ChakraProvider } from "@chakra-ui/react";
+import { QueryClientProvider } from "@tanstack/react-query";
 import axios, { type AxiosError } from "axios";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -27,22 +27,9 @@ import { ColorModeProvider } from "src/context/colorMode";
 import { TimezoneProvider } from "src/context/timezone";
 import { router } from "src/router";
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    mutations: {
-      retry: 1,
-      retryDelay: 500,
-    },
-    queries: {
-      initialDataUpdatedAt: new Date().setMinutes(-6), // make sure initial data is already expired
-      refetchOnMount: true, // Refetches stale queries, not "always"
-      refetchOnWindowFocus: false,
-      retry: 1,
-      retryDelay: 500,
-      staleTime: 5 * 60 * 1000, // 5 minutes
-    },
-  },
-});
+import { TOKEN_STORAGE_KEY } from "./layouts/BaseLayout";
+import { queryClient } from "./queryClient";
+import { system } from "./theme";
 
 // redirect to login page if the API responds with unauthorized or forbidden errors
 axios.interceptors.response.use(
@@ -52,18 +39,28 @@ axios.interceptors.response.use(
       const params = new URLSearchParams();
 
       params.set("next", globalThis.location.href);
-      globalThis.location.replace(
-        `${import.meta.env.VITE_LEGACY_API_URL}/login?${params.toString()}`,
-      );
+      globalThis.location.replace(`${import.meta.env.VITE_LEGACY_API_URL}/login?${params.toString()}`);
     }
 
     return Promise.reject(error);
   },
 );
 
+axios.interceptors.request.use((config) => {
+  const token: string | null = localStorage.getItem(TOKEN_STORAGE_KEY);
+
+  if (token !== null) {
+    // usehooks-ts stores a JSON.stringified version of values, we cannot use usehooks-ts here because we are outside of
+    // a react component. Therefore using bare localStorage.getItem and manually parsing the value.
+    config.headers.Authorization = `Bearer ${JSON.parse(token)}`;
+  }
+
+  return config;
+});
+
 createRoot(document.querySelector("#root") as HTMLDivElement).render(
   <StrictMode>
-    <ChakraProvider value={defaultSystem}>
+    <ChakraProvider value={system}>
       <ColorModeProvider>
         <QueryClientProvider client={queryClient}>
           <TimezoneProvider>
