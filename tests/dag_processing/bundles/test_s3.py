@@ -182,14 +182,12 @@ class TestS3DagBundle:
         )
 
         bundle.initialize()
-        # dags are downloaded once by initialize and one with refresh called inside initialize
+        # dags are downloaded once by initialize and once with refresh called post initialize
         assert caplog.text.count("Downloading DAGs from s3") == 2
         self.assert_log_matches_regex(
             caplog=caplog,
             level="DEBUG",
             regex=rf"Downloaded.*{S3_BUCKET_PREFIX}.*subproject1/dag_a.py.*{bundle.bare_repo_path.as_posix()}.*subproject1/dag_a.py.*",
-            # Downloaded project1/dags/subproject1/dag_a.py to /private/var/folders/3l/n5dbz15s68592fk76c31hth8ffmnng/T/pytest-of-simseki/pytest-42/test_refresh0/s3/test/subproject1/dag_a.py
-            # Downloaded.*project1/dags.*subproject1/dag_a.py.*/private/var/folders/3l/n5dbz15s68592fk76c31hth8ffmnng/T/pytest-of-simseki/pytest-42/test_refresh0/s3/test.*subproject1/dag_a.py.*' found. Logged messages:
         )
 
         s3_client.put_object(
@@ -206,6 +204,20 @@ class TestS3DagBundle:
             caplog=caplog,
             level="DEBUG",
             regex=rf"Downloaded.*{S3_BUCKET_PREFIX}.*dag_03.py.*/s3/{bundle.name}/dag_03.py",
+        )
+        bundle.bare_repo_path.joinpath("dag_should_be_deleted.py").write_text("test dag")
+        bundle.bare_repo_path.joinpath("dag_should_be_deleted_folder").mkdir(exist_ok=True)
+        bundle.refresh()
+        assert caplog.text.count("Downloading DAGs from s3") == 4
+        self.assert_log_matches_regex(
+            caplog=caplog,
+            level="DEBUG",
+            regex=rf"Deleted stale empty directory.*dag_should_be_deleted_folder",
+        )
+        self.assert_log_matches_regex(
+            caplog=caplog,
+            level="DEBUG",
+            regex=rf"Deleted stale local file.*dag_should_be_deleted.py",
         )
 
     def assert_log_matches_regex(self, caplog, level, regex):

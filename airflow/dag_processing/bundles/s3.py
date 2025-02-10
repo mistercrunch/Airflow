@@ -103,9 +103,11 @@ class S3DagBundle(BaseDagBundle, LoggingMixin):
                     if item.is_file():
                         item.unlink(missing_ok=True)
                         self.log.debug(f"Deleted stale local file: {item}")
-                    elif item.is_dir() and not os.listdir(item):
-                        item.rmdir()
-                        self.log.debug(f"Deleted stale empty directory: {item}")
+                    elif item.is_dir():
+                        # delete only when the folder is empty
+                        if not os.listdir(item):
+                            item.rmdir()
+                            self.log.debug(f"Deleted stale empty directory: {item}")
                     else:
                         self.log.debug(f"Skipping stale item of unknown type: {item}")
                 except OSError as e:
