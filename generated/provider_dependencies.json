@@ -1287,9 +1287,7 @@
     ],
     "devel-deps": [],
     "plugins": [],
-    "cross-providers-deps": [
-      "common.compat"
-    ],
+    "cross-providers-deps": [],
     "excluded-python-versions": [],
     "state": "ready"
   },
