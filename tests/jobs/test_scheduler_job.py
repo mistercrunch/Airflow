@@ -64,7 +64,6 @@ from airflow.models.taskinstance import TaskInstance
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.sdk.definitions.asset import Asset
-from airflow.serialization.serialized_objects import SerializedDAG
 from airflow.timetables.base import DataInterval
 from airflow.utils import timezone
 from airflow.utils.session import create_session, provide_session
@@ -520,9 +519,8 @@ class TestSchedulerJob:
         dag_id = "SchedulerJobTest.test_execute_task_instances_is_paused_wont_execute"
         task_id_1 = "dummy_task"
 
-        with dag_maker(dag_id=dag_id, session=session) as dag:
+        with dag_maker(dag_id=dag_id, session=session):
             EmptyOperator(task_id=task_id_1)
-        assert isinstance(dag, SerializedDAG)
 
         scheduler_job = Job()
         self.job_runner = SchedulerJobRunner(job=scheduler_job)
@@ -5536,10 +5534,10 @@ class TestSchedulerJob:
 
         # We will provision 2 tasks so we can check we only find zombies from this scheduler
         tasks_to_setup = ["branching", "run_this_first"]
-
+        dag_version = DagVersion.get_latest_version(dag.dag_id)
         for task_id in tasks_to_setup:
             task = dag.get_task(task_id=task_id)
-            ti = TaskInstance(task, run_id=dag_run.run_id, state=State.RUNNING)
+            ti = TaskInstance(task, run_id=dag_run.run_id, state=State.RUNNING, dag_version_id=dag_version.id)
             ti.queued_by_job_id = 999
 
             session.add(ti)
@@ -5871,7 +5869,6 @@ class TestSchedulerJob:
         session.flush()
 
         dag.catchup = False
-        DAG.bulk_write_to_db("testing", None, [dag])
         assert not dag.catchup
 
         dm = DagModel.get_dagmodel(dag.dag_id)

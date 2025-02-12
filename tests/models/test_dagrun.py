@@ -1391,7 +1391,7 @@ def test_mapped_literal_faulty_state_in_db(dag_maker, session):
     assert len(decision.schedulable_tis) == 2
 
     # We insert a faulty record
-    session.add(TaskInstance(task=dag.get_task("task_2"), run_id=dr.run_id))
+    session.add(TaskInstance(task=dag.get_task("task_2"), run_id=dr.run_id, dag_version_id=ti.dag_version_id))
     session.flush()
 
     decision = dr.task_instance_scheduling_decisions()
@@ -1692,9 +1692,22 @@ def test_schedule_tis_map_index(dag_maker, session):
         task = BaseOperator(task_id="task_1")
 
     dr = DagRun(dag_id="test", run_id="test", run_type=DagRunType.MANUAL)
-    ti0 = TI(task=task, run_id=dr.run_id, map_index=0, state=TaskInstanceState.SUCCESS)
-    ti1 = TI(task=task, run_id=dr.run_id, map_index=1, state=None)
-    ti2 = TI(task=task, run_id=dr.run_id, map_index=2, state=TaskInstanceState.SUCCESS)
+    dag_version_id = DagVersion.get_latest_version(dag_id=dr.dag_id, session=session).id
+    ti0 = TI(
+        task=task,
+        run_id=dr.run_id,
+        map_index=0,
+        state=TaskInstanceState.SUCCESS,
+        dag_version_id=dag_version_id,
+    )
+    ti1 = TI(task=task, run_id=dr.run_id, map_index=1, state=None, dag_version_id=dag_version_id)
+    ti2 = TI(
+        task=task,
+        run_id=dr.run_id,
+        map_index=2,
+        state=TaskInstanceState.SUCCESS,
+        dag_version_id=dag_version_id,
+    )
     session.add_all((dr, ti0, ti1, ti2))
     session.flush()
 
@@ -1895,8 +1908,9 @@ def test_schedulable_task_exist_when_rerun_removed_upstream_mapped_task(session,
     ti = dr.get_task_instance("do_something_else", session=session)
     ti.map_index = 0
     task = ti.task
+    dag_version_id = DagVersion.get_latest_version(dag_id=dr.dag_id, session=session).id
     for map_index in range(1, 5):
-        ti = TI(task, run_id=dr.run_id, map_index=map_index)
+        ti = TI(task, run_id=dr.run_id, map_index=map_index, dag_version_id=dag_version_id)
         session.add(ti)
         ti.dag_run = dr
     session.flush()

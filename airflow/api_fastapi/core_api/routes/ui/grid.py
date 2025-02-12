@@ -23,7 +23,6 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
-from sqlalchemy.orm import joinedload
 
 from airflow import DAG
 from airflow.api_fastapi.common.db.common import SessionDep, paginated_select
@@ -51,6 +50,7 @@ from airflow.api_fastapi.core_api.services.ui.grid import (
     get_task_group_map,
 )
 from airflow.models import DagRun, TaskInstance
+from airflow.models.dag_version import DagVersion
 
 grid_router = AirflowRouter(prefix="/grid", tags=["Grid"])
 
@@ -94,9 +94,7 @@ def grid_data(
     base_query = (
         select(DagRun)
         .join(DagRun.dag_run_note, isouter=True)
-        .join(DagRun.dag_version, isouter=True)
         .select_from(DagRun)
-        .options(joinedload(DagRun.dag_version))
         .where(DagRun.dag_id == dag.dag_id)
     )
 
@@ -203,7 +201,7 @@ def grid_data(
         task_node_map=task_node_map,
         session=session,
     )
-
+    dag_version = DagVersion.get_latest_version(dag.dag_id)
     # Aggregate the Task Instances by DAG Run
     grid_dag_runs = [
         GridDAGRunwithTIs(
@@ -215,7 +213,7 @@ def grid_data(
             run_type=dag_run.run_type,
             data_interval_start=dag_run.data_interval_start,
             data_interval_end=dag_run.data_interval_end,
-            version_number=dag_run.dag_version.version_number if dag_run.dag_version else None,
+            version_number=dag_version.version_number if dag_version else None,
             note=dag_run.note,
             task_instances=(
                 task_instance_summaries[dag_run.run_id] if dag_run.run_id in task_instance_summaries else []

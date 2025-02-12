@@ -944,9 +944,12 @@ def dag_maker(request) -> Generator[DagMaker, None, None]:
             kwargs["run_type"] = run_type
 
             if AIRFLOW_V_3_0_PLUS:
+                from airflow.models.dag_version import DagVersion
+
+                dag_version = DagVersion.get_latest_version(dag.dag_id, session=self.session)
                 kwargs.setdefault("triggered_by", DagRunTriggeredByType.TEST)
                 kwargs["logical_date"] = logical_date
-                kwargs.setdefault("dag_version", None)
+                kwargs["dag_version"] = kwargs.get("dag_version", dag_version)
                 kwargs.setdefault("run_after", data_interval[-1])
             else:
                 kwargs.pop("dag_version", None)
@@ -1228,6 +1231,8 @@ def create_task_instance(dag_maker: DagMaker, create_dummy_dag: CreateDummyDAG) 
     """
     from airflow.providers.standard.operators.empty import EmptyOperator
 
+    from tests_common.test_utils.version_compat import AIRFLOW_V_3_0_PLUS
+
     def maker(
         logical_date=None,
         dagrun_state=None,
@@ -1295,6 +1300,12 @@ def create_task_instance(dag_maker: DagMaker, create_dummy_dag: CreateDummyDAG) 
         ti.hostname = hostname or ""
         ti.pid = pid
         ti.last_heartbeat_at = last_heartbeat_at
+        if AIRFLOW_V_3_0_PLUS:
+            from airflow.models.dag_version import DagVersion
+
+            dag_version = DagVersion.get_latest_version(dag_id, session=session)
+            assert dag_version
+            ti.dag_version_id = dag_version.id
         dag_maker.session.flush()
         return ti
 
