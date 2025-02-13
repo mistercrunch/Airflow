@@ -804,7 +804,6 @@ def _set_ti_attrs(target, source, include_dag_run=False):
         target.dag_run.data_interval_start = source.dag_run.data_interval_start
         target.dag_run.data_interval_end = source.dag_run.data_interval_end
         target.dag_run.last_scheduling_decision = source.dag_run.last_scheduling_decision
-        target.dag_run.dag_version_id = source.dag_run.dag_version_id
         target.dag_run.updated_at = source.dag_run.updated_at
         target.dag_run.log_template_id = source.dag_run.log_template_id
 
@@ -1692,7 +1691,9 @@ class TaskInstance(Base, LoggingMixin):
     next_kwargs = Column(MutableDict.as_mutable(ExtendedJSON))
 
     _task_display_property_value = Column("task_display_name", String(2000), nullable=True)
-    dag_version_id = Column(UUIDType(binary=False), ForeignKey("dag_version.id", ondelete="CASCADE"))
+    dag_version_id = Column(
+        UUIDType(binary=False), ForeignKey("dag_version.id", ondelete="CASCADE"), nullable=False
+    )
     dag_version = relationship("DagVersion", back_populates="task_instances")
     # If adding new fields here then remember to add them to
     # _set_ti_attrs() or they won't display in the UI correctly
@@ -1805,7 +1806,7 @@ class TaskInstance(Base, LoggingMixin):
         :meta private:
         """
         priority_weight = task.weight_rule.get_weight(
-            TaskInstance(task=task, run_id=run_id, map_index=map_index)
+            TaskInstance(task=task, run_id=run_id, map_index=map_index, dag_version_id=dag_version_id)
         )
 
         return {

@@ -1171,7 +1171,9 @@ class DagRun(Base, LoggingMixin):
                 # the db references.
                 ti.clear_db_references(session=session)
             try:
-                expanded_tis, _ = TaskMap.expand_mapped_task(ti.task, self.run_id, session=session)
+                expanded_tis, _ = TaskMap.expand_mapped_task(
+                    ti.dag_version_id, ti.task, self.run_id, session=session
+                )
             except NotMapped:  # Not a mapped task, nothing needed.
                 return None
             if expanded_tis:
@@ -1205,7 +1207,11 @@ class DagRun(Base, LoggingMixin):
                 # It's enough to revise map index once per task id,
                 # checking the map index for each mapped task significantly slows down scheduling
                 if schedulable.task.task_id not in revised_map_index_task_ids:
-                    ready_tis.extend(self._revise_map_indexes_if_mapped(schedulable.task, session=session))
+                    ready_tis.extend(
+                        self._revise_map_indexes_if_mapped(
+                            schedulable.dag_version_id, schedulable.task, session=session
+                        )
+                    )
                     revised_map_index_task_ids.add(schedulable.task.task_id)
                 ready_tis.append(schedulable)
 
@@ -1561,7 +1567,9 @@ class DagRun(Base, LoggingMixin):
             # TODO[HA]: We probably need to savepoint this so we can keep the transaction alive.
             session.rollback()
 
-    def _revise_map_indexes_if_mapped(self, task: Operator, *, session: Session) -> Iterator[TI]:
+    def _revise_map_indexes_if_mapped(
+        self, dag_version_id: UUIDType, task: Operator, *, session: Session
+    ) -> Iterator[TI]:
         """
         Check if task increased or reduced in length and handle appropriately.
 
@@ -1607,7 +1615,7 @@ class DagRun(Base, LoggingMixin):
         for index in range(total_length):
             if index in existing_indexes:
                 continue
-            ti = TI(task, run_id=self.run_id, map_index=index, state=None)
+            ti = TI(task, run_id=self.run_id, map_index=index, state=None, dag_version_id=dag_version_id)
             self.log.debug("Expanding TIs upserted %s", ti)
             task_instance_mutation_hook(ti)
             ti = session.merge(ti)

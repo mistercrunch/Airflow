@@ -32,6 +32,7 @@ from airflow import settings
 from airflow.configuration import conf
 from airflow.decorators import task as task_decorator
 from airflow.models import DagRun, Variable
+from airflow.models.dag_version import DagVersion
 from airflow.models.renderedtifields import RenderedTaskInstanceFields as RTIF
 from airflow.models.taskmap import TaskMap
 from airflow.providers.standard.operators.bash import BashOperator
@@ -285,12 +286,13 @@ class TestRenderedTaskInstanceFields:
         with set_current_task_instance_session(session=session):
             with dag_maker("test_delete_old_records", session=session) as dag:
                 mapped = BashOperator.partial(task_id="mapped").expand(bash_command=["a", "b"])
+            dag_version_id = DagVersion.get_latest_version(dag.dag_id, session=session).id
             for num in range(num_runs):
                 dr = dag_maker.create_dagrun(
                     run_id=f"run_{num}", logical_date=dag.start_date + timedelta(days=num)
                 )
 
-                TaskMap.expand_mapped_task(mapped, dr.run_id, session=dag_maker.session)
+                TaskMap.expand_mapped_task(dag_version_id, mapped, dr.run_id, session=dag_maker.session)
                 session.refresh(dr)
                 for ti in dr.task_instances:
                     ti.task = dag.get_task(ti.task_id)
