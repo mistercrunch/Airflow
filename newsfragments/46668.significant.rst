@@ -1,0 +1,17 @@
+``get_conn`` will no more open connection to distant host, it implies the following changes:
+
+- it will not return a shell_id anymore (instead it will return a winrm Protocol object)
+- the ``client`` property is removed
+- if you used the ``winrm_protocol`` property, you'll have to call ``open_shell`` since it's not done by the get_conn
+
+
+* Types of change
+
+  * [ ] Dag changes
+  * [ ] Config changes
+  * [ ] API changes
+  * [ ] CLI changes
+  * [x] Behaviour changes
+  * [ ] Plugin changes
+  * [ ] Dependency changes
+  * [x] Code interface changes
