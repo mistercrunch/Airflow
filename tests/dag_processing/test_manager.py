@@ -43,10 +43,11 @@ from airflow.callbacks.callback_requests import DagCallbackRequest
 from airflow.config_templates.airflow_local_settings import DEFAULT_LOGGING_CONFIG
 from airflow.dag_processing.bundles.manager import DagBundlesManager
 from airflow.dag_processing.manager import (
-    DagFileInfo,
     DagFileProcessorManager,
     DagFileStat,
+    _ActiveFileSet,
 )
+from airflow.dag_processing.parse_info import DagFile, ParseBundleInfo, ParseFileInfo
 from airflow.dag_processing.processor import DagFileProcessorProcess
 from airflow.models import DAG, DagBag, DagModel, DbCallbackRequest
 from airflow.models.asset import TaskOutletAssetReference
@@ -78,8 +79,22 @@ TEST_DAG_FOLDER = Path(__file__).parents[1].resolve() / "dags"
 DEFAULT_DATE = timezone.datetime(2016, 1, 1)
 
 
-def _get_file_infos(files: list[str | Path]) -> list[DagFileInfo]:
-    return [DagFileInfo(bundle_name="testing", bundle_path=TEST_DAGS_FOLDER, rel_path=Path(f)) for f in files]
+def _default_bundle_info() -> ParseBundleInfo:
+    return ParseBundleInfo(
+        name="testing",
+        path=TEST_DAGS_FOLDER,
+    )
+
+
+def _get_file_infos(files: list[str | Path]) -> list[ParseFileInfo]:
+    return [ParseFileInfo(bundle=_default_bundle_info(), rel_path=Path(f)) for f in files]
+
+
+def _get_known_files(per_bundle_infos: dict[str, set[ParseFileInfo]]) -> _ActiveFileSet:
+    known_files = _ActiveFileSet()
+    for bundle_name, file_infos in per_bundle_infos.items():
+        known_files.set_bundle_file_infos(bundle_name, file_infos)
+    return known_files
 
 
 def mock_get_mtime(file: Path):
@@ -105,6 +120,109 @@ def encode_mtime_in_filename(val):
         addition = f"ss={str(mtime)}"
         out.append(f"{f.stem}-{addition}{f.suffix}")
     return out
+
+
+class TestActiveFileSet:
+    def test_updates_bundle_info(self):
+        fileset = _ActiveFileSet()
+        stable_bundle = ParseBundleInfo(name="stable", path="/stable")
+        old_version = ParseBundleInfo(name="testing", path="/old_path")
+        fileset.set_bundle_file_infos(
+            "stable", set([ParseFileInfo(rel_path="stable.py", bundle=stable_bundle)])
+        )
+        fileset.set_bundle_file_infos(
+            "testing", set([ParseFileInfo(rel_path="local.py", bundle=old_version)])
+        )
+
+        assert fileset.bundle_dag_files == {
+            "stable": set([DagFile(rel_path="stable.py", bundle_name="stable")]),
+            "testing": set([DagFile(rel_path="local.py", bundle_name="testing")]),
+        }
+        assert fileset.parse_file_infos == {
+            DagFile(rel_path="stable.py", bundle_name="stable"): ParseFileInfo(
+                rel_path="stable.py", bundle=stable_bundle
+            ),
+            DagFile(rel_path="local.py", bundle_name="testing"): ParseFileInfo(
+                rel_path="local.py", bundle=old_version
+            ),
+        }
+
+        new_version = ParseBundleInfo(name="testing", path="/new_path")
+        fileset.set_bundle_file_infos(
+            "testing", set([ParseFileInfo(rel_path="local.py", bundle=new_version)])
+        )
+        assert fileset.bundle_dag_files == {
+            "stable": set([DagFile(rel_path="stable.py", bundle_name="stable")]),
+            "testing": set([DagFile(rel_path="local.py", bundle_name="testing")]),
+        }
+        assert fileset.parse_file_infos == {
+            DagFile(rel_path="stable.py", bundle_name="stable"): ParseFileInfo(
+                rel_path="stable.py", bundle=stable_bundle
+            ),
+            DagFile(rel_path="local.py", bundle_name="testing"): ParseFileInfo(
+                rel_path="local.py", bundle=new_version
+            ),
+        }
+
+    def test_removes_missing_dag_file_entries(self):
+        fileset = _ActiveFileSet()
+        bundle_1 = ParseBundleInfo(name="bundle_1", path="/bundle1")
+        bundle_2 = ParseBundleInfo(name="bundle_2", path="/bundle2")
+        fileset.set_bundle_file_infos("bundle_1", set([ParseFileInfo(rel_path="file_0.py", bundle=bundle_1)]))
+        fileset.set_bundle_file_infos(
+            "bundle_2",
+            set(
+                [
+                    ParseFileInfo(rel_path="file_1.py", bundle=bundle_2),
+                    ParseFileInfo(rel_path="file_2.py", bundle=bundle_2),
+                ]
+            ),
+        )
+        assert fileset.bundle_dag_files == {
+            "bundle_1": set([DagFile(rel_path="file_0.py", bundle_name="bundle_1")]),
+            "bundle_2": set(
+                [
+                    DagFile(rel_path="file_1.py", bundle_name="bundle_2"),
+                    DagFile(rel_path="file_2.py", bundle_name="bundle_2"),
+                ]
+            ),
+        }
+        assert fileset.parse_file_infos == {
+            DagFile(rel_path="file_0.py", bundle_name="bundle_1"): ParseFileInfo(
+                rel_path="file_0.py", bundle=bundle_1
+            ),
+            DagFile(rel_path="file_1.py", bundle_name="bundle_2"): ParseFileInfo(
+                rel_path="file_1.py", bundle=bundle_2
+            ),
+            DagFile(rel_path="file_2.py", bundle_name="bundle_2"): ParseFileInfo(
+                rel_path="file_2.py", bundle=bundle_2
+            ),
+        }
+
+        fileset.set_bundle_file_infos(
+            "bundle_2",
+            set(
+                [
+                    ParseFileInfo(rel_path="file_1.py", bundle=bundle_2),
+                ]
+            ),
+        )
+        assert fileset.bundle_dag_files == {
+            "bundle_1": set([DagFile(rel_path="file_0.py", bundle_name="bundle_1")]),
+            "bundle_2": set(
+                [
+                    DagFile(rel_path="file_1.py", bundle_name="bundle_2"),
+                ]
+            ),
+        }
+        assert fileset.parse_file_infos == {
+            DagFile(rel_path="file_0.py", bundle_name="bundle_1"): ParseFileInfo(
+                rel_path="file_0.py", bundle=bundle_1
+            ),
+            DagFile(rel_path="file_1.py", bundle_name="bundle_2"): ParseFileInfo(
+                rel_path="file_1.py", bundle=bundle_2
+            ),
+        }
 
 
 class TestDagFileProcessorManager:
@@ -196,16 +314,18 @@ class TestDagFileProcessorManager:
             manager = DagFileProcessorManager(max_runs=1)
             manager._dag_bundles = list(DagBundlesManager().get_all_dag_bundles())
 
-        file_1 = DagFileInfo(bundle_name="testing", rel_path=Path("file_1.py"), bundle_path=TEST_DAGS_FOLDER)
-        file_2 = DagFileInfo(bundle_name="testing", rel_path=Path("file_2.py"), bundle_path=TEST_DAGS_FOLDER)
-        file_3 = DagFileInfo(bundle_name="testing", rel_path=Path("file_3.py"), bundle_path=TEST_DAGS_FOLDER)
-        manager._file_queue = deque([file_1, file_2, file_3])
+        file_1 = ParseFileInfo(bundle=_default_bundle_info(), rel_path=Path("file_1.py"))
+        file_2 = ParseFileInfo(bundle=_default_bundle_info(), rel_path=Path("file_2.py"))
+        file_3 = ParseFileInfo(bundle=_default_bundle_info(), rel_path=Path("file_3.py"))
+        manager._file_queue = deque([file_1.file, file_2.file, file_3.file])
 
         # Mock that only one processor exists. This processor runs with 'file_1'
-        manager._processors[file_1] = MagicMock()
+        manager._processors[file_1.file] = MagicMock()
         # Start New Processes
         with mock.patch.object(DagFileProcessorManager, "_create_process"):
-            manager._start_new_processes()
+            manager._start_new_processes(
+                known_files=_get_known_files({"testing": set([file_1, file_2, file_3])})
+            )
 
         # Because of the config: '[dag_processor] parsing_processes = 2'
         # verify that only one extra process is created
@@ -213,48 +333,43 @@ class TestDagFileProcessorManager:
         # even though it is first in '_file_path_queue'
         # a new processor is created with 'file_2' and not 'file_1'.
 
-        assert file_1 in manager._processors.keys()
-        assert file_2 in manager._processors.keys()
-        assert deque([file_3]) == manager._file_queue
+        assert file_1.file in manager._processors.keys()
+        assert file_2.file in manager._processors.keys()
+        assert deque([file_3.file]) == manager._file_queue
 
     def test_handle_removed_files_when_processor_file_path_not_in_new_file_paths(self):
         """Ensure processors and file stats are removed when the file path is not in the new file paths"""
         manager = DagFileProcessorManager(max_runs=1)
-        bundle_name = "testing"
-        file = DagFileInfo(
-            bundle_name=bundle_name, rel_path=Path("missing_file.txt"), bundle_path=TEST_DAGS_FOLDER
-        )
+        file = DagFile(rel_path=Path("abc.txt"), bundle_name="testing")
 
         manager._processors[file] = MagicMock()
         manager._file_stats[file] = DagFileStat()
 
-        manager.handle_removed_files({bundle_name: set()})
+        manager.handle_removed_files({})
         assert manager._processors == {}
         assert file not in manager._file_stats
 
     def test_handle_removed_files_when_processor_file_path_is_present(self):
         """handle_removed_files should not purge files that are still present."""
         manager = DagFileProcessorManager(max_runs=1)
-        bundle_name = "testing"
-        file = DagFileInfo(bundle_name=bundle_name, rel_path=Path("abc.txt"), bundle_path=TEST_DAGS_FOLDER)
+        file = DagFile(rel_path=Path("abc.txt"), bundle_name="testing")
         mock_processor = MagicMock()
 
         manager._processors[file] = mock_processor
 
-        manager.handle_removed_files(known_files={bundle_name: {file}})
+        manager.handle_removed_files(all_present_files={file})
         assert manager._processors == {file: mock_processor}
 
     @conf_vars({("dag_processor", "file_parsing_sort_mode"): "alphabetical"})
     def test_files_in_queue_sorted_alphabetically(self):
         """Test dag files are sorted alphabetically"""
         file_names = ["file_3.py", "file_2.py", "file_4.py", "file_1.py"]
-        dag_files = _get_file_infos(file_names)
-        ordered_dag_files = _get_file_infos(sorted(file_names))
+        dag_infos = _get_file_infos(file_names)
+        ordered_dag_files = (f.file for f in _get_file_infos(sorted(file_names)))
 
         manager = DagFileProcessorManager(max_runs=1)
-        known_files = {"some-bundle": set(dag_files)}
         assert manager._file_queue == deque()
-        manager.prepare_file_queue(known_files=known_files)
+        manager.prepare_file_queue(known_files=_get_known_files({"any": set(dag_infos)}))
         assert manager._file_queue == deque(ordered_dag_files)
 
     @conf_vars({("dag_processor", "file_parsing_sort_mode"): "random_seeded_by_host"})
@@ -262,13 +377,13 @@ class TestDagFileProcessorManager:
         """Test files are randomly sorted and seeded by host name"""
 
         f_infos = _get_file_infos(["file_3.py", "file_2.py", "file_4.py", "file_1.py"])
-        known_files = {"anything": f_infos}
+        known_files = _get_known_files({"testing": f_infos})
         manager = DagFileProcessorManager(max_runs=1)
 
         assert manager._file_queue == deque()
         manager.prepare_file_queue(known_files=known_files)  # using list over test for reproducibility
         random.Random(get_hostname()).shuffle(f_infos)
-        expected = deque(f_infos)
+        expected = deque(f.file for f in f_infos)
         assert manager._file_queue == expected
 
         # Verify running it again produces same order
@@ -287,19 +402,22 @@ class TestDagFileProcessorManager:
             ("file_1.py", 4.0),
         ]
         filenames = encode_mtime_in_filename(paths_with_mtime)
-        dag_files = _get_file_infos(filenames)
+        dag_infos = _get_file_infos(filenames)
 
         manager = DagFileProcessorManager(max_runs=1)
 
         assert manager._file_queue == deque()
-        manager.prepare_file_queue(known_files={"any": set(dag_files)})
-        ordered_files = _get_file_infos(
-            [
-                "file_4-ss=5.0.py",
-                "file_1-ss=4.0.py",
-                "file_3-ss=3.0.py",
-                "file_2-ss=2.0.py",
-            ]
+        manager.prepare_file_queue(known_files=_get_known_files({"any": set(dag_infos)}))
+        ordered_files = (
+            f.file
+            for f in _get_file_infos(
+                [
+                    "file_4-ss=5.0.py",
+                    "file_1-ss=4.0.py",
+                    "file_3-ss=3.0.py",
+                    "file_2-ss=2.0.py",
+                ]
+            )
         )
         assert manager._file_queue == deque(ordered_files)
 
@@ -311,8 +429,8 @@ class TestDagFileProcessorManager:
         filenames = encode_mtime_in_filename(file_and_mtime)
         file_infos = _get_file_infos(filenames)
         manager = DagFileProcessorManager(max_runs=1)
-        manager.prepare_file_queue(known_files={"any": set(file_infos)})
-        ordered_files = _get_file_infos(["file_2-ss=3.0.py", "file_3-ss=2.0.py"])
+        manager.prepare_file_queue(known_files=_get_known_files({"any": set(file_infos)}))
+        ordered_files = (f.file for f in _get_file_infos(["file_2-ss=3.0.py", "file_3-ss=2.0.py"]))
         assert manager._file_queue == deque(ordered_files)
 
     @conf_vars({("dag_processor", "file_parsing_sort_mode"): "modified_time"})
@@ -325,20 +443,26 @@ class TestDagFileProcessorManager:
         Random("file_2.py").random()
         manager = DagFileProcessorManager(max_runs=1)
 
-        manager.prepare_file_queue(known_files={"any": set(dag_files)})
-        assert set(manager._file_queue) == set(dag_files)
+        manager.prepare_file_queue(
+            known_files=_get_known_files({_default_bundle_info().name: set(dag_files)})
+        )
+        assert set(manager._file_queue) == set(f.file for f in dag_files)
 
         manager.prepare_file_queue(
-            known_files={"any": set((*dag_files, *_get_file_infos(["file_4-ss=1.0.py"])))}
+            known_files=_get_known_files(
+                {_default_bundle_info().name: set((*dag_files, *_get_file_infos(["file_4-ss=1.0.py"])))}
+            )
         )
-        # manager.add_files_to_queue()
-        ordered_files = _get_file_infos(
-            [
-                "file_3-ss=4.0.py",
-                "file_2-ss=3.0.py",
-                "file_1-ss=2.0.py",
-                "file_4-ss=1.0.py",
-            ]
+        ordered_files = (
+            f.file
+            for f in _get_file_infos(
+                [
+                    "file_3-ss=4.0.py",
+                    "file_2-ss=3.0.py",
+                    "file_1-ss=2.0.py",
+                    "file_4-ss=1.0.py",
+                ]
+            )
         )
         assert manager._file_queue == deque(ordered_files)
 
@@ -350,10 +474,8 @@ class TestDagFileProcessorManager:
         """
         freezed_base_time = timezone.datetime(2020, 1, 5, 0, 0, 0)
         initial_file_1_mtime = (freezed_base_time - timedelta(minutes=5)).timestamp()
-        dag_file = DagFileInfo(
-            bundle_name="testing", rel_path=Path("file_1.py"), bundle_path=TEST_DAGS_FOLDER
-        )
-        known_files = {"does-not-matter": {dag_file}}
+        dag_info = ParseFileInfo(bundle=_default_bundle_info(), rel_path=Path("file_1.py"))
+        known_files = _get_known_files({_default_bundle_info().name: {dag_info}})
         mock_getmtime.side_effect = [initial_file_1_mtime]
 
         manager = DagFileProcessorManager(max_runs=3)
@@ -361,7 +483,7 @@ class TestDagFileProcessorManager:
         # let's say the DAG was just parsed 10 seconds before the Freezed time
         last_finish_time = freezed_base_time - timedelta(seconds=10)
         manager._file_stats = {
-            dag_file: DagFileStat(1, 0, last_finish_time, 1.0, 1, 1),
+            dag_info.file: DagFileStat(1, 0, last_finish_time, 1.0, 1, 1),
         }
         with time_machine.travel(freezed_base_time):
             assert manager._file_queue == deque()
@@ -379,11 +501,11 @@ class TestDagFileProcessorManager:
             mock_getmtime.side_effect = [file_1_new_mtime_ts]
             manager.prepare_file_queue(known_files=known_files)
             # Check that file is added to the queue even though file was just recently passed
-            assert manager._file_queue == deque([dag_file])
+            assert manager._file_queue == deque([dag_info.file])
             assert last_finish_time < file_1_new_mtime
             assert (
                 manager._file_process_interval
-                > (freezed_base_time - manager._file_stats[dag_file].last_finish_time).total_seconds()
+                > (freezed_base_time - manager._file_stats[dag_info.file].last_finish_time).total_seconds()
             )
 
     @pytest.mark.skip("AIP-66: parsing requests are not bundle aware yet")
@@ -418,16 +540,15 @@ class TestDagFileProcessorManager:
             processor_timeout=10 * 60,
         )
 
-        test_dag_path = DagFileInfo(
-            bundle_name="testing",
+        test_dag_path = ParseFileInfo(
+            bundle=_default_bundle_info(),
             rel_path=Path("test_example_bash_operator.py"),
-            bundle_path=TEST_DAGS_FOLDER,
         )
         dagbag = DagBag(
             test_dag_path.absolute_path,
             read_dags_from_db=False,
             include_examples=False,
-            bundle_path=test_dag_path.bundle_path,
+            bundle_path=test_dag_path.bundle.path,
         )
 
         with create_session() as session:
@@ -447,14 +568,14 @@ class TestDagFileProcessorManager:
                 last_num_of_db_queries=1,
             )
             manager._files = [test_dag_path]
-            manager._file_stats[test_dag_path] = stat
+            manager._file_stats[test_dag_path.file] = stat
 
             active_dag_count = (
                 session.query(func.count(DagModel.dag_id))
                 .filter(
                     DagModel.is_active,
                     DagModel.relative_fileloc == str(test_dag_path.rel_path),
-                    DagModel.bundle_name == test_dag_path.bundle_name,
+                    DagModel.bundle_name == test_dag_path.bundle.name,
                 )
                 .scalar()
             )
@@ -467,7 +588,7 @@ class TestDagFileProcessorManager:
                 .filter(
                     DagModel.is_active,
                     DagModel.relative_fileloc == str(test_dag_path.rel_path),
-                    DagModel.bundle_name == test_dag_path.bundle_name,
+                    DagModel.bundle_name == test_dag_path.bundle.name,
                 )
                 .scalar()
             )
@@ -488,8 +609,9 @@ class TestDagFileProcessorManager:
         processor = self.mock_processor()
         processor._process.create_time.return_value = timezone.make_aware(datetime.min).timestamp()
         manager._processors = {
-            DagFileInfo(
-                bundle_name="testing", rel_path=Path("abc.txt"), bundle_path=TEST_DAGS_FOLDER
+            ParseFileInfo(
+                bundle=_default_bundle_info(),
+                rel_path=Path("abc.txt"),
             ): processor
         }
         with mock.patch.object(type(processor), "kill") as mock_kill:
@@ -506,8 +628,9 @@ class TestDagFileProcessorManager:
         processor = self.mock_processor()
         processor._process.create_time.return_value = timezone.make_aware(datetime.max).timestamp()
         manager._processors = {
-            DagFileInfo(
-                bundle_name="testing", rel_path=Path("abc.txt"), bundle_path=TEST_DAGS_FOLDER
+            ParseFileInfo(
+                bundle=_default_bundle_info(),
+                rel_path=Path("abc.txt"),
             ): processor
         }
         with mock.patch.object(type(processor), "kill") as mock_kill:
@@ -520,10 +643,13 @@ class TestDagFileProcessorManager:
         [
             pytest.param(
                 [],
-                "/opt/airflow/dags/test_dag.py",
+                "test_dag.py",
                 b"{"
-                b'"file":"/opt/airflow/dags/test_dag.py",'
-                b'"bundle_path":"/opt/airflow/dags",'
+                b'"parse_file_info":'
+                b"{"
+                b'"rel_path":"test_dag.py",'
+                b'"bundle":{"name":"testing","path":"/opt/airflow/dags","version":null}'
+                b"},"
                 b'"requests_fd":123,'
                 b'"callback_requests":[],'
                 b'"type":"DagFileParseRequest"'
@@ -540,10 +666,13 @@ class TestDagFileProcessorManager:
                         is_failure_callback=False,
                     )
                 ],
-                "/opt/airflow/dags/dag_callback_dag.py",
+                "dag_callback_dag.py",
                 b"{"
-                b'"file":"/opt/airflow/dags/dag_callback_dag.py",'
-                b'"bundle_path":"/opt/airflow/dags",'
+                b'"parse_file_info":'
+                b"{"
+                b'"rel_path":"dag_callback_dag.py",'
+                b'"bundle":{"name":"testing","path":"/opt/airflow/dags","version":null}'
+                b"},"
                 b'"requests_fd":123,"callback_requests":'
                 b"["
                 b"{"
@@ -563,8 +692,11 @@ class TestDagFileProcessorManager:
         ],
     )
     def test_serialize_callback_requests(self, callbacks, path, expected_buffer):
+        file_info = ParseFileInfo(
+            bundle=ParseBundleInfo(name="testing", path="/opt/airflow/dags"), rel_path=path
+        )
         processor = self.mock_processor()
-        processor._on_child_started(callbacks, path, bundle_path=Path("/opt/airflow/dags"))
+        processor._on_child_started(callbacks=callbacks, parse_file_info=file_info)
 
         # Verify the response was added to the buffer
         val = processor.stdin.getvalue()
@@ -682,13 +814,10 @@ class TestDagFileProcessorManager:
         with dag_maker("test_dag2") as dag2:
             dag2.relative_fileloc = "test_dag2.py"
         dag_maker.sync_dagbag_to_db()
+        maker_bundle = ParseBundleInfo(name="dag_maker", path=TEST_DAGS_FOLDER)
 
         active_files = [
-            DagFileInfo(
-                bundle_name="dag_maker",
-                rel_path=Path("test_dag1.py"),
-                bundle_path=TEST_DAGS_FOLDER,
-            ),
+            ParseFileInfo(bundle=maker_bundle, rel_path=Path("test_dag1.py")),
             # Mimic that the test_dag2.py file is deleted
         ]
 
@@ -776,10 +905,9 @@ class TestDagFileProcessorManager:
                 processor_timeout=365 * 86_400,
             )
             manager._dag_bundles = list(DagBundlesManager().get_all_dag_bundles())
+            bundle_info = ParseBundleInfo(name="testing", path=Path(tmp_path))
 
-            dag1_path = DagFileInfo(
-                bundle_name="testing", rel_path=Path("file1.py"), bundle_path=Path(tmp_path)
-            )
+            dag1_info = ParseFileInfo(bundle=bundle_info, rel_path=Path("file1.py"))
             dag1_req1 = DagCallbackRequest(
                 filepath="file1.py",
                 dag_id="dag1",
@@ -799,39 +927,39 @@ class TestDagFileProcessorManager:
                 msg=None,
             )
 
-            dag2_path = DagFileInfo(
-                bundle_name="testing", rel_path=Path("file2.py"), bundle_path=Path(tmp_path)
-            )
+            dag2_info = ParseFileInfo(bundle=bundle_info, rel_path=Path("file2.py"))
             dag2_req1 = DagCallbackRequest(
                 filepath="file2.py",
                 dag_id="dag2",
                 run_id="run1",
-                bundle_name=dag2_path.bundle_name,
+                bundle_name=dag2_info.bundle.name,
                 bundle_version=None,
                 is_failure_callback=False,
                 msg=None,
             )
 
+            known_files = _get_known_files({"testing": set([dag1_info, dag2_info])})
+
             # when
-            manager._add_callback_to_queue(dag1_req1)
-            manager._add_callback_to_queue(dag2_req1)
+            manager._add_callback_to_queue(dag1_req1, known_files)
+            manager._add_callback_to_queue(dag2_req1, known_files)
 
             # then - requests should be in manager's queue, with dag2 ahead of dag1 (because it was added last)
-            assert manager._file_queue == deque([dag2_path, dag1_path])
+            assert manager._file_queue == deque([dag2_info.file, dag1_info.file])
             assert set(manager._callback_to_execute.keys()) == {
-                dag1_path,
-                dag2_path,
+                dag1_info.file,
+                dag2_info.file,
             }
-            assert manager._callback_to_execute[dag2_path] == [dag2_req1]
+            assert manager._callback_to_execute[dag2_info.file] == [dag2_req1]
 
             # update the queue, although the callback is registered
-            assert manager._file_queue == deque([dag2_path, dag1_path])
+            assert manager._file_queue == deque([dag2_info.file, dag1_info.file])
 
             # when
-            manager._add_callback_to_queue(dag1_req2)
+            manager._add_callback_to_queue(dag1_req2, known_files)
             # Since dag1_req2 is same as dag1_req1, we now have 2 items in file_path_queue
-            assert manager._file_queue == deque([dag2_path, dag1_path])
-            assert manager._callback_to_execute[dag1_path] == [
+            assert manager._file_queue == deque([dag2_info.file, dag1_info.file])
+            assert manager._callback_to_execute[dag1_info.file] == [
                 dag1_req1,
                 dag1_req2,
             ]
@@ -839,29 +967,27 @@ class TestDagFileProcessorManager:
             with mock.patch.object(
                 DagFileProcessorProcess, "start", side_effect=lambda *args, **kwargs: self.mock_processor()
             ) as start:
-                manager._start_new_processes()
+                manager._start_new_processes(known_files=known_files)
             # Callbacks passed to processor
             assert start.call_args_list == [
                 mock.call(
                     id=mock.ANY,
-                    path=Path(dag2_path.bundle_path, dag2_path.rel_path),
-                    bundle_path=dag2_path.bundle_path,
+                    parse_file_info=dag2_info,
                     callbacks=[dag2_req1],
                     selector=mock.ANY,
                     logger=mock_logger.return_value,
                 ),
                 mock.call(
                     id=mock.ANY,
-                    path=Path(dag1_path.bundle_path, dag1_path.rel_path),
-                    bundle_path=dag1_path.bundle_path,
+                    parse_file_info=dag1_info,
                     callbacks=[dag1_req1, dag1_req2],
                     selector=mock.ANY,
                     logger=mock_logger.return_value,
                 ),
             ]
             # And removed from the queue
-            assert dag1_path not in manager._callback_to_execute
-            assert dag2_path not in manager._callback_to_execute
+            assert dag1_info.file not in manager._callback_to_execute
+            assert dag2_info.file not in manager._callback_to_execute
 
     def test_dag_with_assets(self, session, configure_testing_dag_bundle):
         """'Integration' test to ensure that the assets get parsed and stored correctly for parsed dags."""
