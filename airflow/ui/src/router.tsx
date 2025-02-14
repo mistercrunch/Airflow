@@ -45,6 +45,7 @@ import { TaskInstances } from "src/pages/TaskInstances";
 import { Variables } from "src/pages/Variables";
 import { XCom } from "src/pages/XCom";
 
+import { Backfills } from "./pages/Dag/Backfills";
 import { queryClient } from "./queryClient";
 
 export const routerConfig = [
@@ -103,6 +104,7 @@ export const routerConfig = [
           { element: <Overview />, index: true },
           { element: <DagRuns />, path: "runs" },
           { element: <Tasks />, path: "tasks" },
+          { element: <Backfills />, path: "backfills" },
           { element: <Events />, path: "events" },
           { element: <Code />, path: "code" },
         ],
