@@ -17,10 +17,12 @@
 # under the License.
 from __future__ import annotations
 
+import itertools
 import logging
 import logging.config
 import os
 import re
+from collections.abc import Iterable
 from http import HTTPStatus
 from importlib import reload
 from pathlib import Path
@@ -64,6 +66,19 @@ pytestmark = pytest.mark.db_test
 DEFAULT_DATE = datetime(2016, 1, 1)
 TASK_LOGGER = "airflow.task"
 FILE_TASK_HANDLER = "task"
+
+
+def events(logs: Iterable[StructuredLogMessage], skip_source_info=True) -> list[str]:
+    """Helper function to return just the event (a.k.a message) from a list of StructuredLogMessage"""
+    logs = iter(logs)
+    if skip_source_info:
+
+        def is_source_group(log: StructuredLogMessage):
+            return not hasattr(log, "timestamp") or log.event == "::endgroup"
+
+        logs = itertools.dropwhile(is_source_group, logs)
+
+    return [s.event for s in logs]
 
 
 class TestFileTaskLogHandler:
@@ -176,8 +191,7 @@ class TestFileTaskLogHandler:
         # We should expect our log line from the callable above to appear in
         # the logs we read back
 
-        events = [s.event for s in log]
-        assert any(re.search(target_re, e) for e in events), "Logs were " + str(log)
+        assert any(re.search(target_re, e) for e in events(log)), "Logs were " + str(log)
 
         # Remove the generated tmp log file.
         os.remove(log_filename)
@@ -405,11 +419,12 @@ class TestFileTaskLogHandler:
             logical_date=DEFAULT_DATE,
         )
         fth = FileTaskHandler("")
-        actual = fth._read(ti=local_log_file_read, try_number=1)
+        logs, metadata = fth._read(ti=local_log_file_read, try_number=1)
         mock_read_local.assert_called_with(path)
-        assert "*** the messages\n" in actual[0]
-        assert actual[0].endswith("the log")
-        assert actual[1] == {"end_of_log": True, "log_pos": 7}
+        as_text = events(logs)
+        assert logs[0].sources == ["the messages"]
+        assert as_text[-1] == "the log"
+        assert metadata == {"end_of_log": True, "log_pos": 1}
 
     def test__read_from_local(self, tmp_path):
         """Tests the behavior of method _read_from_local"""
@@ -420,11 +435,7 @@ class TestFileTaskLogHandler:
         path2.write_text("file2 content")
         fth = FileTaskHandler("")
         assert fth._read_from_local(path1) == (
-            [
-                "Found local files:",
-                f"  * {path1}",
-                f"  * {path2}",
-            ],
+            [str(path1), str(path2)],
             ["file1 content", "file2 content"],
         )
 
@@ -467,16 +478,15 @@ class TestFileTaskLogHandler:
                 fth._read_from_local.return_value = ["found local logs"], ["local\nlog\ncontent"]
             fth._read_from_logs_server = mock.Mock()
             fth._read_from_logs_server.return_value = ["this message"], ["this\nlog\ncontent"]
-            actual = fth._read(ti=ti, try_number=1)
+            logs, metadata = fth._read(ti=ti, try_number=1)
         if served_logs_checked:
             fth._read_from_logs_server.assert_called_once()
-            assert "*** this message\n" in actual[0]
-            assert actual[0].endswith("this\nlog\ncontent")
-            assert actual[1] == {"end_of_log": True, "log_pos": 16}
+            assert events(logs) == ["this", "log", "content"]
+            assert metadata == {"end_of_log": True, "log_pos": 3}
         else:
             fth._read_from_logs_server.assert_not_called()
-            assert actual[0]
-            assert actual[1]
+            assert logs
+            assert metadata
 
     def test_add_triggerer_suffix(self):
         sample = "any/path/to/thing.txt"
@@ -669,22 +679,12 @@ def test_interleave_interleaves():
         {
             "event": "[2022-11-16T00:05:54.295-0800] {taskinstance.py:1278} INFO - "
             "Executing <Task(TimeDeltaSensorAsync): wait> on 2022-11-16 "
-            "08:05:52.324532+00:00\n",
+            "08:05:52.324532+00:00",
             "timestamp": DateTime(2022, 11, 16, 0, 5, 54, 295000, tzinfo=tz),
         },
         {
             "event": "[2022-11-16T00:05:54.300-0800] {standard_task_runner.py:55} INFO - "
-            "Started process 52536 to run task\n",
-            "timestamp": DateTime(2022, 11, 16, 0, 5, 54, 300000, tzinfo=tz),
-        },
-        {
-            "event": "[2022-11-16T00:05:54.300-0800] {standard_task_runner.py:55} INFO - "
-            "Started process 52536 to run task\n",
-            "timestamp": DateTime(2022, 11, 16, 0, 5, 54, 300000, tzinfo=tz),
-        },
-        {
-            "event": "[2022-11-16T00:05:54.300-0800] {standard_task_runner.py:55} INFO - "
-            "Started process 52536 to run task\n",
+            "Started process 52536 to run task",
             "timestamp": DateTime(2022, 11, 16, 0, 5, 54, 300000, tzinfo=tz),
         },
         {
@@ -694,7 +694,7 @@ def test_interleave_interleaves():
             "'33648', '--raw', '--subdir', "
             "'/Users/dstandish/code/airflow/airflow/example_dags/example_time_delta_sensor_async.py', "
             "'--cfg-path', "
-            "'/var/folders/7_/1xx0hqcs3txd7kqt0ngfdjth0000gn/T/tmp725r305n']\n",
+            "'/var/folders/7_/1xx0hqcs3txd7kqt0ngfdjth0000gn/T/tmp725r305n']",
             "timestamp": DateTime(2022, 11, 16, 0, 5, 54, 306000, tzinfo=tz),
         },
         {
@@ -706,32 +706,32 @@ def test_interleave_interleaves():
             "event": "[2022-11-16T00:05:54.457-0800] {task_command.py:376} INFO - "
             "Running <TaskInstance: simple_async_timedelta.wait "
             "manual__2022-11-16T08:05:52.324532+00:00 [running]> on host "
-            "daniels-mbp-2.lan\n",
+            "daniels-mbp-2.lan",
             "timestamp": DateTime(2022, 11, 16, 0, 5, 54, 457000, tzinfo=tz),
         },
         {
             "event": "[2022-11-16T00:05:54.592-0800] {taskinstance.py:1485} INFO - "
-            "Exporting env vars: AIRFLOW_CTX_DAG_OWNER=airflow\n",
+            "Exporting env vars: AIRFLOW_CTX_DAG_OWNER=airflow",
             "timestamp": DateTime(2022, 11, 16, 0, 5, 54, 592000, tzinfo=tz),
         },
         {
-            "event": "AIRFLOW_CTX_DAG_ID=simple_async_timedelta\n",
+            "event": "AIRFLOW_CTX_DAG_ID=simple_async_timedelta",
             "timestamp": DateTime(2022, 11, 16, 0, 5, 54, 592000, tzinfo=tz),
         },
         {
-            "event": "AIRFLOW_CTX_TASK_ID=wait\n",
+            "event": "AIRFLOW_CTX_TASK_ID=wait",
             "timestamp": DateTime(2022, 11, 16, 0, 5, 54, 592000, tzinfo=tz),
         },
         {
-            "event": "AIRFLOW_CTX_LOGICAL_DATE=2022-11-16T08:05:52.324532+00:00\n",
+            "event": "AIRFLOW_CTX_LOGICAL_DATE=2022-11-16T08:05:52.324532+00:00",
             "timestamp": DateTime(2022, 11, 16, 0, 5, 54, 592000, tzinfo=tz),
         },
         {
-            "event": "AIRFLOW_CTX_TRY_NUMBER=1\n",
+            "event": "AIRFLOW_CTX_TRY_NUMBER=1",
             "timestamp": DateTime(2022, 11, 16, 0, 5, 54, 592000, tzinfo=tz),
         },
         {
-            "event": "AIRFLOW_CTX_DAG_RUN_ID=manual__2022-11-16T08:05:52.324532+00:00\n",
+            "event": "AIRFLOW_CTX_DAG_RUN_ID=manual__2022-11-16T08:05:52.324532+00:00",
             "timestamp": DateTime(2022, 11, 16, 0, 5, 54, 592000, tzinfo=tz),
         },
         {
@@ -764,7 +764,8 @@ def test_interleave_logs_correct_ordering():
     [2023-01-17T12:47:11.883-0800] {triggerer_job.py:540} INFO - Trigger <airflow.triggers.temporal.DateTimeTrigger moment=2023-01-17T20:47:11.254388+00:00> (ID 1) fired: TriggerEvent<DateTime(2023, 1, 17, 20, 47, 11, 254388, tzinfo=Timezone('UTC'))>
     """
 
-    assert sample_with_dupe == "\n".join(_interleave_logs(sample_with_dupe, "", sample_with_dupe))
+    logs = events(_interleave_logs(sample_with_dupe, "", sample_with_dupe))
+    assert sample_with_dupe == "\n".join(logs)
 
 
 def test_interleave_logs_correct_dedupe():
@@ -779,7 +780,8 @@ def test_interleave_logs_correct_dedupe():
     test,
     test"""
 
-    assert sample_without_dupe == "\n".join(_interleave_logs(",\n    ".join(["test"] * 10)))
+    logs = events(_interleave_logs(",\n    ".join(["test"] * 10)))
+    assert sample_without_dupe == "\n".join(logs)
 
 
 def test_permissions_for_new_directories(tmp_path):

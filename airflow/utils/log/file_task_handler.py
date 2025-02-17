@@ -122,7 +122,9 @@ if not _parse_timestamp:
         return pendulum.parse(timestamp_str.strip("[]"))
 
 
-def _parse_log_lines(lines: Iterable[str]) -> Iterable[tuple[int, datetime | None, StructuredLogMessage]]:
+def _parse_log_lines(lines: Iterable[str]) -> Iterable[tuple[datetime | None, int, StructuredLogMessage]]:
+    from airflow.utils.timezone import coerce_datetime
+
     timestamp = None
     next_timestamp = None
     for idx, line in enumerate(lines):
@@ -136,16 +138,20 @@ def _parse_log_lines(lines: Iterable[str]) -> Iterable[tuple[int, datetime | Non
                     next_timestamp = _parse_timestamp(line)
                 log = StructuredLogMessage.model_construct(event=line, timestamp=next_timestamp)
             if log.timestamp:
+                log.timestamp = coerce_datetime(log.timestamp)
                 timestamp = log.timestamp
-            yield idx, timestamp, log
+            yield timestamp, idx, log
 
 
 def _interleave_logs(*logs) -> Iterable[StructuredLogMessage]:
     min_date = pendulum.datetime(2000, 1, 1)
 
     records = itertools.chain.from_iterable(_parse_log_lines(log.splitlines()) for log in logs)
-    for _, _, msg in sorted(records, key=lambda x: (x[1] or min_date, x[0])):
-        yield msg
+    last = None
+    for timestamp, _, msg in sorted(records, key=lambda x: (x[0] or min_date, x[1])):
+        if msg != last or not timestamp:  # dedupe
+            yield msg
+        last = msg
 
 
 def _ensure_ti(ti: TaskInstanceKey | TaskInstance, session) -> TaskInstance:
