@@ -272,3 +272,81 @@ class TestPinotDbApiHook:
         assert column == df.columns[0]
         for i, item in enumerate(result_sets):
             assert item[0] == df.values.tolist()[i][0]
+
+
+class TestPinotAdminHookWithAuth:
+    def setup_method(self):
+        self.conn = conn = mock.MagicMock()
+        self.conn.host = "host"
+        self.conn.port = "1000"
+        self.conn.user = "user"
+        self.conn.password = "pwd"
+        self.conn.extra_dejson = {}
+
+        class PinotAdminHookTest(PinotAdminHook):
+            def get_connection(self, conn_id):
+                return conn
+
+        self.db_hook = PinotAdminHookTest()
+
+    @mock.patch("airflow.providers.apache.pinot.hooks.pinot.PinotAdminHook.run_cli")
+    def test_add_schema_with_auth(self, mock_run_cli):
+        params = ["schema_file", False]
+        self.db_hook.add_schema(*params)
+        mock_run_cli.assert_called_once_with(
+            [
+                "AddSchema",
+                "-user",
+                self.conn.user,
+                "-password",
+                self.conn.password,
+                "-controllerHost",
+                self.conn.host,
+                "-controllerPort",
+                self.conn.port,
+                "-schemaFile",
+                params[0],
+            ]
+        )
+
+class TestPinotDbApiHookWithAuth:
+    def setup_method(self):
+        self.conn = conn = mock.MagicMock()
+        self.conn.host = "host"
+        self.conn.port = "1000"
+        self.conn.conn_type = "http"
+        self.conn.user_name = "user"
+        self.conn.password = "pwd"
+        self.conn.extra_dejson = {"endpoint": "query/sql"}
+        self.cur = mock.MagicMock(rowcount=0)
+        self.conn.cursor.return_value = self.cur
+        self.conn.__enter__.return_value = self.cur
+        self.conn.__exit__.return_value = None
+
+        class TestPinotDBApiHook(PinotDbApiHook):
+            def get_conn(self):
+                return conn
+
+            def get_connection(self, conn_id):
+                return conn
+
+        self.db_hook = TestPinotDBApiHook
+
+    def test_get_uri_with_auth(self):
+        """
+        Test on getting a pinot connection uri
+        """
+        db_hook = self.db_hook()
+        assert db_hook.get_uri() == "http://user:pwd@host:1000/query/sql"
+
+    def test_get_conn_with_auth(self):
+        """
+        Test on getting a pinot connection
+        """
+        conn = self.db_hook().get_conn()
+        assert conn.host == "host"
+        assert conn.port == "1000"
+        assert conn.user == "user"
+        assert conn.password == "pwd"
+        assert conn.conn_type == "http"
+        assert conn.extra_dejson.get("endpoint") == "query/sql"
