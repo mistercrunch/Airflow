@@ -45,7 +45,9 @@ class TaskLogReader:
     STREAM_LOOP_SLEEP_SECONDS = 1
     """Time to sleep between loops while waiting for more logs"""
 
-    def read_log_chunks(self, ti: TaskInstance, try_number: int, metadata) -> tuple[LogMessages, LogMetadata]:
+    def read_log_chunks(
+        self, ti: TaskInstance, try_number: int | None, metadata
+    ) -> tuple[LogMessages, LogMetadata]:
         """
         Read chunks of Task Instance logs.
 

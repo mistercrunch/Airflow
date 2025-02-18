@@ -85,7 +85,7 @@ class TestFileTaskLogHandler:
         if AIRFLOW_V_3_0_PLUS:
             assert metadata == {"end_of_log": False, "log_pos": 3}
             assert logs[0].sources == ["this message"]
-            assert [x.event for x in logs[-3:]] == ["this\n", "log\n", "content"]
+            assert [x.event for x in logs[-3:]] == ["this", "log", "content"]
         else:
             assert "*** this message\n" in logs
             assert logs.endswith("this\nlog\ncontent")
