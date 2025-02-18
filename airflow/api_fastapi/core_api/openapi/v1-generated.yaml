@@ -8078,6 +8078,16 @@ components:
           - type: string
           - type: 'null'
           title: Description
+        bundle_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Bundle Name
+        latest_bundle_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Latest Bundle Version
         timetable_summary:
           anyOf:
           - type: string
@@ -8222,6 +8232,8 @@ components:
       - default_view
       - fileloc
       - description
+      - bundle_name
+      - latest_bundle_version
       - timetable_summary
       - timetable_description
       - tags
@@ -8301,6 +8313,16 @@ components:
           - type: string
           - type: 'null'
           title: Description
+        bundle_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Bundle Name
+        latest_bundle_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Latest Bundle Version
         timetable_summary:
           anyOf:
           - type: string
@@ -8378,6 +8400,8 @@ components:
       - default_view
       - fileloc
       - description
+      - bundle_name
+      - latest_bundle_version
       - timetable_summary
       - timetable_description
       - tags
@@ -8815,6 +8839,16 @@ components:
           - type: string
           - type: 'null'
           title: Description
+        bundle_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Bundle Name
+        latest_bundle_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Latest Bundle Version
         timetable_summary:
           anyOf:
           - type: string
@@ -8897,6 +8931,8 @@ components:
       - default_view
       - fileloc
       - description
+      - bundle_name
+      - latest_bundle_version
       - timetable_summary
       - timetable_description
       - tags
