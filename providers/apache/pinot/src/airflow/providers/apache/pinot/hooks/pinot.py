@@ -74,6 +74,8 @@ class PinotAdminHook(BaseHook):
         conn = self.get_connection(conn_id)
         self.host = conn.host
         self.port = str(conn.port)
+        self.username = conn.login
+        self.password = conn.password
         if cmd_path != "pinot-admin.sh":
             raise RuntimeError(
                 "In version 4.0.0 of the PinotAdminHook the cmd_path has been hard-coded to"
@@ -277,6 +279,8 @@ class PinotDbApiHook(DbApiHook):
         pinot_broker_conn = connect(
             host=conn.host,
             port=conn.port,
+            username=conn.login,
+            password=conn.password,
             path=conn.extra_dejson.get("endpoint", "/query/sql"),
             scheme=conn.extra_dejson.get("schema", "http"),
         )
