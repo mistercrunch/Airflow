@@ -1,4 +1,5 @@
-Replace ``external_trigger`` check with ``DagRunType``
+Replace the ``external_trigger`` check with ``DagRunType``, and update any logic that relies on ``external_trigger`` to use ``run_type`` instead.
+
 
 * Types of change
 
